@@ -53,9 +53,18 @@ private:
     std::atomic<bool>     running_{false};
     std::atomic<bool>     stopRequested_{false};
 
-    void*  recvInstance_ = nullptr; ///< NDIlib_recv_instance_t
-    int    ltcChannel_   = -1;      ///< -1 = auto
-    int    sampleRate_   = 48000;
+    void*       recvInstance_ = nullptr; ///< NDIlib_recv_instance_t
+    std::string sourceName_;             ///< stored for reconnect
+    int         ltcChannel_   = -1;      ///< -1 = auto, 0 = left, 1 = right
+    int         sampleRate_   = 48000;
+
+    // Auto-detect state: accumulated mean-square per channel across frames
+    // Re-evaluated every AUTO_DETECT_FRAMES audio frames (~1 s at 30 fps)
+    static constexpr int AUTO_DETECT_FRAMES = 30;
+    float autoRmsAccumL_    = 0.f;
+    float autoRmsAccumR_    = 0.f;
+    int   autoFrameCount_   = 0;
+    int   autoDetectedCh_   = 0; ///< last stable auto-detected channel
 
     AudioRingBuffer<8192> ringBuffer_;
 };
