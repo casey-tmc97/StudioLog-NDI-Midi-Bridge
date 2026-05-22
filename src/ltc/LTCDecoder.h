@@ -9,7 +9,7 @@
 
 // Forward-declare libltc frame type so ltc.h stays out of this header
 // (ltc.h is included in LTCDecoder.cpp only, away from MOC's reach)
-struct LTCSMPTEFrame;
+struct LTCFrame;
 
 namespace StudioLog {
 
@@ -49,7 +49,7 @@ signals:
 
 private:
     void threadFunc();
-    void processDecodedFrame(const LTCSMPTEFrame& raw, long pos);
+    void processDecodedFrame(const LTCFrame& raw, long pos);
     void onLockAcquired(const SMPTETimecode& tc);
     void onLockLost();
 

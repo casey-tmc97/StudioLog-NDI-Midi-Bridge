@@ -50,12 +50,42 @@ void FrameValidator::reset()
 bool FrameValidator::isConsecutive(const SMPTETimecode& prev,
                                     const SMPTETimecode& next) const
 {
-    // TODO: build a linear frame counter for both prev and next, then
-    //       check that next == prev + 1 (accounting for DF skip rules).
-    // For now: same fps and frames differ by 1 (simplified, doesn't handle
-    // second/minute boundaries or DF skips yet).
-    (void)prev; (void)next;
-    return false;
+    // FPS mismatch → not consecutive (rate change mid-stream)
+    if (prev.fps != next.fps) return false;
+
+    const int fps = framesPerSecond(prev.fps);
+
+    // Convert a timecode to an absolute linear frame number.
+    //
+    // Non-drop-frame:
+    //   n = fps * (3600h + 60m + s) + f
+    //
+    // Drop-frame (29.97DF):
+    //   Frames 0 and 1 are omitted at the start of every minute that is not
+    //   a multiple of 10, so the total number of dropped frames through minute M
+    //   (across all hours) is:  2 * M  -  2 * (M / 10)
+    //   where M = 60*h + m (integer division for the /10 term).
+    //
+    //   n_df = fps * (3600h + 60m + s) + f - 2*M + 2*(M/10)
+    //
+    auto linearFrame = [fps](const SMPTETimecode& tc) -> int64_t {
+        const int64_t totalMins =
+            static_cast<int64_t>(tc.hours) * 60 + tc.minutes;
+        int64_t n =
+            static_cast<int64_t>(fps) *
+                (static_cast<int64_t>(tc.hours)   * 3600 +
+                 static_cast<int64_t>(tc.minutes) * 60   +
+                 static_cast<int64_t>(tc.seconds))
+            + static_cast<int64_t>(tc.frames);
+
+        if (tc.dropFrame) {
+            n -= 2 * totalMins;
+            n += 2 * (totalMins / 10);
+        }
+        return n;
+    };
+
+    return linearFrame(next) == linearFrame(prev) + 1;
 }
 
 } // namespace StudioLog
