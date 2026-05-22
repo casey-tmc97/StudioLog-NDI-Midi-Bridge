@@ -1,0 +1,10 @@
+<RCC>
+    <qresource prefix="/">
+        <!-- Icons will go here once designed -->
+        <!-- <file>icons/tray_idle.png</file>   -->
+        <!-- <file>icons/tray_locked.png</file> -->
+        <!-- <file>icons/tray_freewheel.png</file> -->
+        <!-- <file>icons/tray_error.png</file>  -->
+        <!-- <file>icons/app.ico</file>          -->
+    </qresource>
+</RCC>

@@ -1,0 +1,10 @@
+# Normalize line endings: LF in repo, CRLF on Windows checkout
+* text=auto eol=lf
+
+# Force binary for compiled/binary assets
+*.lib   binary
+*.dll   binary
+*.exe   binary
+*.png   binary
+*.ico   binary
+*.7z    binary

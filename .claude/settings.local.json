@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git submodule *)",
+      "Read(//c/Users/Casey_Pittman/**)",
+      "Bash(find /c -maxdepth 3 -name \"vcpkg.exe\")",
+      "Read(//c//**)",
+      "PowerShell(pip *)",
+      "PowerShell(git clone *)",
+      "PowerShell(C:\\\\vcpkg\\\\bootstrap-vcpkg.bat -disableMetrics 2>&1 | Select-Object -Last 5)",
+      "PowerShell(aqt list-qt *)",
+      "PowerShell(aqt install-qt *)"
+    ]
+  }
+}

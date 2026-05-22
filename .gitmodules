@@ -1,0 +1,3 @@
+[submodule "third_party/libltc"]
+	path = third_party/libltc
+	url = https://github.com/x42/libltc.git

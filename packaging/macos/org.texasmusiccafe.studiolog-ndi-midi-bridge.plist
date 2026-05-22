@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+          "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    macOS Launch Agent plist — auto-starts StudioLog NDI MIDI Bridge at login.
+    Install to: ~/Library/LaunchAgents/
+    Load with:  launchctl load -w ~/Library/LaunchAgents/org.texasmusiccafe.studiolog-ndi-midi-bridge.plist
+    Unload with: launchctl unload -w ...
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.texasmusiccafe.studiolog-ndi-midi-bridge</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/StudioLog NDI MIDI Bridge.app/Contents/MacOS/StudioLogNDIMIDIBridge</string>
+        <string>--minimize</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/studiolog-ndi-midi-bridge.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/studiolog-ndi-midi-bridge.err</string>
+</dict>
+</plist>
