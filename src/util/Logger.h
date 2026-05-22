@@ -1,5 +1,6 @@
 #pragma once
 #include <QString>
+#include <functional>
 
 namespace StudioLog {
 
@@ -10,8 +11,17 @@ class Logger
 public:
     enum class Level { Debug, Info, Warn, Error };
 
+    /// Callback type: receives the fully-formatted log line (with timestamp).
+    using LogCallback = std::function<void(Level, const QString& line)>;
+
     static void init(const QString& logFilePath = {});
     static void setLevel(Level minLevel);
+
+    /// Install a callback invoked (under the internal mutex) after each log
+    /// line is written.  Pass {} to clear.  The callback must not itself call
+    /// Logger methods (deadlock).  Use QMetaObject::invokeMethod with
+    /// QueuedConnection to forward to the UI thread safely.
+    static void setCallback(LogCallback cb);
 
     static void debug(const QString& msg);
     static void info (const QString& msg);

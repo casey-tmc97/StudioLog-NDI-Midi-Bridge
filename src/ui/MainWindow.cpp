@@ -1,10 +1,14 @@
 #include "MainWindow.h"
 #include "ui_MainWindow.h"
-#include "SetupPanel.h"
 #include "app/Settings.h"
 #include <QCloseEvent>
+#include <QMessageBox>
+#include <QApplication>
+#include <QSystemTrayIcon>
 
 namespace StudioLog {
+
+// ── Construction ──────────────────────────────────────────────────────────────
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -13,7 +17,38 @@ MainWindow::MainWindow(QWidget* parent)
     ui_->setupUi(this);
     setWindowTitle("StudioLog NDI MIDI Bridge");
 
-    // TODO: connect internal UI signals to slots
+    // ── Internal combo-box → private slot wiring ──────────────────────────────
+    // Use activated() not currentIndexChanged() so programmatic updates
+    // (via QSignalBlocker in the on*Changed slots) don't fire user-action signals.
+    connect(ui_->ndiCombo,  QOverload<int>::of(&QComboBox::activated),
+            this, [this](int /*idx*/) {
+                onNDISourceSelected(ui_->ndiCombo->currentText());
+            });
+
+    connect(ui_->midiCombo, QOverload<int>::of(&QComboBox::activated),
+            this, [this](int /*idx*/) {
+                onMIDIPortSelected(ui_->midiCombo->currentText());
+            });
+
+    connect(ui_->channelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onChannelChanged);
+
+    // ── Menu actions ──────────────────────────────────────────────────────────
+    connect(ui_->actionQuit, &QAction::triggered, qApp, &QApplication::quit);
+
+    connect(ui_->actionAbout, &QAction::triggered, this, [this] {
+        QMessageBox::about(this,
+            "About StudioLog NDI MIDI Bridge",
+            "<b>StudioLog NDI MIDI Bridge</b> v" + QApplication::applicationVersion() +
+            "<br><br>"
+            "Receives SMPTE LTC embedded in an NDI audio stream and<br>"
+            "converts it to MIDI Timecode (MTC) in real time.<br><br>"
+            "Texas Music Cafe · <a href='https://texasmusiccafe.org'>texasmusiccafe.org</a><br>"
+            "501(c)(3) nonprofit live broadcast");
+    });
+
+    // Initial display state
+    updateStateDisplay(State::Idle);
 }
 
 MainWindow::~MainWindow()
@@ -21,10 +56,21 @@ MainWindow::~MainWindow()
     delete ui_;
 }
 
+// ── Settings pre-population ───────────────────────────────────────────────────
+
 void MainWindow::setSettings(Settings* settings)
 {
     settings_ = settings;
+    if (!settings_) return;
+
+    // Pre-select the saved LTC channel (lists are not yet populated here;
+    // NDI/MIDI selections are restored inside on*Changed when lists arrive).
+    const int ch = settings_->ltcChannel(); // -1=Auto, 0=Left, 1=Right
+    QSignalBlocker b(ui_->channelCombo);
+    ui_->channelCombo->setCurrentIndex(ch + 1); // -1→0, 0→1, 1→2
 }
+
+// ── Public slots (called from Application's signal connections) ───────────────
 
 void MainWindow::onStateChanged(State newState, State /*oldState*/)
 {
@@ -38,27 +84,65 @@ void MainWindow::onTimecodeUpdated(SMPTETimecode tc)
 
 void MainWindow::onNDISourcesChanged(const QStringList& sources)
 {
-    // TODO: populate NDI source combo box
-    (void)sources;
+    QSignalBlocker b(ui_->ndiCombo);
+    const QString current = ui_->ndiCombo->currentText();
+
+    ui_->ndiCombo->clear();
+    ui_->ndiCombo->addItems(sources);
+
+    // Restore selection: prefer what was already shown, then fall back to saved
+    int idx = -1;
+    if (!current.isEmpty())
+        idx = ui_->ndiCombo->findText(current);
+    if (idx < 0 && settings_)
+        idx = ui_->ndiCombo->findText(settings_->ndiSourceName());
+    if (idx >= 0)
+        ui_->ndiCombo->setCurrentIndex(idx);
 }
 
 void MainWindow::onMIDIPortsChanged(const QStringList& ports)
 {
-    // TODO: populate MIDI port combo box
-    (void)ports;
+    QSignalBlocker b(ui_->midiCombo);
+    const QString current = ui_->midiCombo->currentText();
+
+    ui_->midiCombo->clear();
+    ui_->midiCombo->addItems(ports);
+
+    // Restore selection: prefer what was shown, then saved port name (partial match)
+    int idx = -1;
+    if (!current.isEmpty())
+        idx = ui_->midiCombo->findText(current);
+    if (idx < 0 && settings_)
+        idx = ui_->midiCombo->findText(settings_->midiPortName(), Qt::MatchContains);
+    if (idx >= 0)
+        ui_->midiCombo->setCurrentIndex(idx);
 }
 
 void MainWindow::onStatusMessage(const QString& msg)
 {
-    // TODO: append to status log widget
-    (void)msg;
+    ui_->logView->appendPlainText(msg);
+    // Auto-scroll to the latest entry
+    QTextCursor c = ui_->logView->textCursor();
+    c.movePosition(QTextCursor::End);
+    ui_->logView->setTextCursor(c);
 }
+
+// ── Close / minimize to tray ──────────────────────────────────────────────────
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    // TODO: if minimizeToTray is set, hide instead of closing
-    event->accept();
+    if (settings_ && settings_->minimizeToTray() &&
+        QSystemTrayIcon::isSystemTrayAvailable())
+    {
+        hide();
+        event->ignore(); // keep the process running
+    } else {
+        event->accept();
+        QApplication::quit();
+    }
 }
+
+// ── Private slots (from combo boxes) ─────────────────────────────────────────
 
 void MainWindow::onNDISourceSelected(const QString& source)
 {
@@ -72,22 +156,85 @@ void MainWindow::onMIDIPortSelected(const QString& port)
     emit midiPortSelected(port);
 }
 
-void MainWindow::onChannelChanged(int channel)
+void MainWindow::onChannelChanged(int index)
 {
+    // Combo indices: 0 = Auto (-1), 1 = Left (0), 2 = Right (1)
+    const int channel = index - 1;
     if (settings_) settings_->setLtcChannel(channel);
     emit ltcChannelChanged(channel);
 }
 
+// ── Display helpers ───────────────────────────────────────────────────────────
+
 void MainWindow::updateStateDisplay(State state)
 {
-    // TODO: update status label color/text based on state
-    (void)state;
+    struct { const char* text; const char* style; } info;
+
+    switch (state) {
+    case State::Idle:
+        info = { "Idle",
+                 "color: #888888; font-weight: normal;" };
+        break;
+    case State::Connecting:
+        info = { "Connecting…",
+                 "color: #5588cc; font-weight: normal;" };
+        break;
+    case State::SearchingLTC:
+        info = { "Searching for LTC…",
+                 "color: #cc8800; font-weight: normal;" };
+        break;
+    case State::Locked:
+        info = { "● Locked",
+                 "color: #22aa44; font-weight: bold;" };
+        break;
+    case State::Freewheel:
+        info = { "◐ Freewheeling",
+                 "color: #cc6600; font-weight: bold;" };
+        break;
+    case State::Reconnecting:
+        info = { "Reconnecting…",
+                 "color: #cc2222; font-weight: normal;" };
+        break;
+    default:
+        info = { "Unknown", "color: #888888;" };
+        break;
+    }
+
+    ui_->stateLabel->setText(info.text);
+    ui_->stateLabel->setStyleSheet(QString("QLabel { %1 }").arg(info.style));
+
+    // Grey out the timecode when not locked
+    if (state != State::Locked && state != State::Freewheel) {
+        ui_->timecodeLabel->setStyleSheet("QLabel { color: #888888; }");
+        ui_->timecodeLabel->setText("--:--:--:--");
+    } else if (state == State::Locked) {
+        ui_->timecodeLabel->setStyleSheet("QLabel { color: #22aa44; }");
+    } else { // Freewheel
+        ui_->timecodeLabel->setStyleSheet("QLabel { color: #cc6600; }");
+    }
 }
 
 void MainWindow::updateTimecodeDisplay(const SMPTETimecode& tc)
 {
-    // TODO: format hh:mm:ss:ff and update timecode LCD label
-    (void)tc;
+    const QString text = QString("%1:%2:%3:%4")
+        .arg(tc.hours,   2, 10, QChar('0'))
+        .arg(tc.minutes, 2, 10, QChar('0'))
+        .arg(tc.seconds, 2, 10, QChar('0'))
+        .arg(tc.frames,  2, 10, QChar('0'));
+
+    ui_->timecodeLabel->setText(text);
+
+    // Show the frame-rate and drop-frame flag in the status bar
+    const char* fpsStr = "30";
+    switch (tc.fps) {
+    case FPS::FPS_23976:   fpsStr = "23.976"; break;
+    case FPS::FPS_24:      fpsStr = "24";     break;
+    case FPS::FPS_25:      fpsStr = "25";     break;
+    case FPS::FPS_2997DF:  fpsStr = "29.97DF"; break;
+    case FPS::FPS_2997NDF: fpsStr = "29.97";  break;
+    case FPS::FPS_30:      fpsStr = "30";     break;
+    }
+    statusBar()->showMessage(QString("%1 fps").arg(fpsStr));
 }
 
 } // namespace StudioLog

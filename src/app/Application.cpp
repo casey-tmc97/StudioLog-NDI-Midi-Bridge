@@ -10,6 +10,7 @@
 #include "ui/TrayIcon.h"
 #include "util/PlatformInit.h"
 #include "util/Logger.h"
+#include <QMetaObject>
 
 namespace StudioLog {
 
@@ -47,6 +48,7 @@ Application::~Application()
     // before NDIReceiver; NDIDiscovery is independent but uses the same NDI
     // library, so it stops last.
     Logger::info("Application: shutting down");
+    Logger::setCallback({}); // prevent dangling pointer after mainWindow_ destructs
 
     if (mtcGenerator_) mtcGenerator_->stop();
     if (ltcDecoder_)   ltcDecoder_->stop();
@@ -176,6 +178,18 @@ void Application::connectSignals()
 void Application::start()
 {
     Logger::info("Application::start — bringing up subsystems");
+
+    // Route log messages to the UI log view (Info and above only).
+    // The callback fires on whatever thread called Logger::log(); we marshal
+    // to the main thread via QueuedConnection so the UI is never touched from
+    // a background thread.
+    Logger::setCallback([this](Logger::Level level, const QString& line) {
+        if (level >= Logger::Level::Info) {
+            QMetaObject::invokeMethod(mainWindow_.get(),
+                [mw = mainWindow_.get(), line]{ mw->onStatusMessage(line); },
+                Qt::QueuedConnection);
+        }
+    });
 
     // Give the main window access to Settings so it can pre-populate UI fields
     mainWindow_->setSettings(settings_.get());

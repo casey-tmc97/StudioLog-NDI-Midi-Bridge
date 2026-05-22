@@ -8,9 +8,10 @@
 namespace StudioLog {
 
 namespace {
-    QMutex   g_mutex;
-    Logger::Level g_minLevel = Logger::Level::Info;
-    QFile    g_file;
+    QMutex          g_mutex;
+    Logger::Level   g_minLevel = Logger::Level::Info;
+    QFile           g_file;
+    Logger::LogCallback g_callback;
 }
 
 static const char* levelStr(Logger::Level l) {
@@ -21,6 +22,12 @@ static const char* levelStr(Logger::Level l) {
         case Logger::Level::Error: return "ERROR";
         default:                   return "?    ";
     }
+}
+
+void Logger::setCallback(LogCallback cb)
+{
+    QMutexLocker lk(&g_mutex);
+    g_callback = std::move(cb);
 }
 
 void Logger::init(const QString& logFilePath)
@@ -54,6 +61,8 @@ void Logger::log(Level level, const QString& msg)
         QTextStream ts(&g_file);
         ts << line << '\n';
     }
+
+    if (g_callback) g_callback(level, line);
 }
 
 void Logger::debug(const QString& msg) { log(Level::Debug, msg); }
