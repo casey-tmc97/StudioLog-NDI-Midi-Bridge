@@ -28,11 +28,12 @@ public:
     static QString stateName(State s);
 
 public slots:
-    void onNDIConnected();
-    void onNDIDisconnected();
-    void onLTCLockAcquired();
-    void onLTCLockLost();
-    void onFreewheelTimeout();
+    void onNDISourceSelected();  ///< User picked a source → Connecting
+    void onNDIConnected();       ///< Audio flowing          → SearchingLTC
+    void onNDIDisconnected();    ///< Connection dropped     → Reconnecting
+    void onLTCLockAcquired();   ///< Decoder locked          → Locked
+    void onLTCLockLost();        ///< Dropout begins          → Freewheel
+    void onFreewheelTimeout();   ///< Freewheel expired       → SearchingLTC
 
 signals:
     void stateChanged(State newState, State oldState);

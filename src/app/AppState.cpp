@@ -35,9 +35,13 @@ void AppState::transition(State next)
     emit stateChanged(current_, old);
 }
 
+void AppState::onNDISourceSelected()
+{
+    transition(State::Connecting);
+}
+
 void AppState::onNDIConnected()
 {
-    // TODO: validate legal transitions
     transition(State::SearchingLTC);
 }
 
