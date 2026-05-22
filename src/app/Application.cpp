@@ -11,6 +11,7 @@
 #include "util/PlatformInit.h"
 #include "util/Logger.h"
 #include <QMetaObject>
+#include <QMetaType>
 
 namespace StudioLog {
 
@@ -23,6 +24,10 @@ Application::Application(int& argc, char** argv)
     setOrganizationName("Texas Music Cafe");
     setOrganizationDomain("texasmusiccafe.org");
     setApplicationVersion("0.1.0");
+
+    // Required for Qt::QueuedConnection to serialise SMPTETimecode across the
+    // event loop (frameDecoded → setTimecode, timecodeUpdated → UI update).
+    qRegisterMetaType<StudioLog::SMPTETimecode>("StudioLog::SMPTETimecode");
 
     initPlatform();
 
@@ -208,6 +213,10 @@ void Application::start()
                                  "select one from the MIDI menu").arg(savedPort));
         }
     }
+
+    // Poll for MIDI port changes every 3 s so loopMIDI ports added at runtime
+    // appear in the UI without restarting the app.
+    midiOutput_->startPortPolling(3000);
 
 #ifdef _WIN32
     if (!MIDIOutput::isLoopMIDIInstalled()) {

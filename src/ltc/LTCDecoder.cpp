@@ -72,6 +72,9 @@ void LTCDecoder::threadFunc()
 
     validator_->reset();
     rateDetector_->reset();
+    totalLtcFrames_ = 0;
+    valFailCount_   = 0;
+    lastDecodedTC_.reset();
 
     auto* dec = static_cast<::LTCDecoder*>(ltcDec_);
     std::array<float, CHUNK_SIZE> chunk{};
@@ -98,6 +101,28 @@ void LTCDecoder::threadFunc()
         LTCFrameExt frameExt{};
         while (ltc_decoder_read(dec, &frameExt)) {
             if (frameExt.reverse) continue; // skip reverse-played frames
+
+            // Diagnostic: log first decoded frame
+            if (totalLtcFrames_ == 0)
+                Logger::info(QString("LTCDecoder: first LTC frame decoded (vol=%1 dBFS)")
+                                 .arg(static_cast<double>(frameExt.volume), 0, 'f', 1));
+            ++totalLtcFrames_;
+
+            // RAW diagnostic: log first 30 frames from libltc (before any filtering)
+            // to expose duplicate and skip patterns from this LTC source.
+            if (totalLtcFrames_ <= 30) {
+                ::SMPTETimecode rawSmpte{};
+                ltc_frame_to_time(&rawSmpte, const_cast<LTCFrame*>(&frameExt.ltc), 0);
+                Logger::info(QString("LTCDecoder[raw#%1] TC=%2:%3:%4:%5 off=[%6,%7]")
+                    .arg(totalLtcFrames_,  2)
+                    .arg(rawSmpte.hours,   2, 10, QChar('0'))
+                    .arg(rawSmpte.mins,    2, 10, QChar('0'))
+                    .arg(rawSmpte.secs,    2, 10, QChar('0'))
+                    .arg(rawSmpte.frame,   2, 10, QChar('0'))
+                    .arg(static_cast<long long>(frameExt.off_start))
+                    .arg(static_cast<long long>(frameExt.off_end)));
+            }
+
             anyDecoded = true;
 
             // Update frame-rate estimate (apvPerFrame_ is informational; libltc
@@ -155,7 +180,39 @@ void LTCDecoder::processDecodedFrame(const LTCFrame& raw, long /*pos*/)
     tc.fps       = fps;
     tc.dropFrame = (raw.dfbit != 0);
 
-    if (!validator_->validate(tc)) return;
+    // ── Duplicate-frame filter ────────────────────────────────────────────────
+    // libltc can re-detect the same LTC frame twice when the sync word of the
+    // following frame is processed (the tail of the current frame looks like a
+    // valid decode at a slightly different offset).  Feeding duplicate TCs to
+    // the validator causes isConsecutive() to return false (diff=0 ≠ +1) and
+    // prevents lock acquisition.  Drop any frame whose TC equals the last one.
+    if (lastDecodedTC_.has_value() && tc == *lastDecodedTC_) return;
+    lastDecodedTC_ = tc;
+
+    // Log first 10 decoded timecodes (after dedup) so the log view shows the
+    // real sequence the validator sees.
+    if (totalLtcFrames_ <= 10) {
+        const char* fpsTag = (fps == FPS::FPS_2997DF)  ? "29.97DF"
+                           : (fps == FPS::FPS_2997NDF) ? "29.97NDF"
+                           : (fps == FPS::FPS_30)      ? "30"
+                           : (fps == FPS::FPS_25)      ? "25"
+                           : (fps == FPS::FPS_24)      ? "24" : "23.976";
+        Logger::info(QString("LTCDecoder: TC %1:%2:%3:%4 @ %5fps")
+                         .arg(tc.hours,   2, 10, QChar('0'))
+                         .arg(tc.minutes, 2, 10, QChar('0'))
+                         .arg(tc.seconds, 2, 10, QChar('0'))
+                         .arg(tc.frames,  2, 10, QChar('0'))
+                         .arg(fpsTag));
+    }
+
+    if (!validator_->validate(tc)) {
+        // Log first 10 validation failures (instance counter resets on each start)
+        if (++valFailCount_ <= 10)
+            Logger::info(QString("LTCDecoder: validate() failed (fail #%1) — "
+                                 "waiting for consecutive frames")
+                             .arg(valFailCount_));
+        return;
+    }
 
     // Store latest frame (latestFrame() is called from the main thread)
     {

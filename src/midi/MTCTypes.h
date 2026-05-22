@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <QMetaType>
 
 namespace StudioLog {
 
@@ -163,3 +164,8 @@ struct MTCQuarterFrame {
 };
 
 } // namespace StudioLog
+
+// Required for Qt QueuedConnection to serialise SMPTETimecode across the event
+// loop (e.g. frameDecoded → setTimecode, timecodeUpdated → onTimecodeUpdated).
+// Must appear outside any namespace.
+Q_DECLARE_METATYPE(StudioLog::SMPTETimecode)

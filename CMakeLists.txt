@@ -89,6 +89,20 @@ if(WIN32)
             "$<TARGET_FILE_DIR:StudioLogNDIMIDIBridge>"
         COMMENT "Copying NDI runtime DLL"
     )
+    # Deploy Qt DLLs (debug or release) so the exe is self-contained in the build dir.
+    # Qt6::windeployqt is available via find_package(Qt6) — uses the right Qt installation.
+    find_program(WINDEPLOYQT_EXECUTABLE windeployqt
+        HINTS "${Qt6_DIR}/../../../bin"
+        NO_DEFAULT_PATH)
+    if(WINDEPLOYQT_EXECUTABLE)
+        add_custom_command(TARGET StudioLogNDIMIDIBridge POST_BUILD
+            COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+                $<IF:$<CONFIG:Debug>,--debug,--release>
+                --no-translations
+                "$<TARGET_FILE:StudioLogNDIMIDIBridge>"
+            COMMENT "Deploying Qt runtime DLLs"
+        )
+    endif()
 elseif(APPLE)
     target_link_libraries(StudioLogNDIMIDIBridge PRIVATE
         "${NDI_SDK_DIR}/lib/macOS/libndi.dylib"

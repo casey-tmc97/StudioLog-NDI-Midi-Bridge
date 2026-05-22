@@ -131,7 +131,10 @@ void NDIReceiver::threadFunc()
                 QMetaObject::invokeMethod(this,
                     [this, n = QString::fromStdString(sourceName_)]{ emit connected(n); },
                     Qt::QueuedConnection);
-                Logger::info("NDIReceiver: audio flowing");
+                Logger::info(QString("NDIReceiver: audio flowing — %1 ch, %2 Hz, FourCC=0x%3")
+                                 .arg(frame.no_channels)
+                                 .arg(frame.sample_rate)
+                                 .arg(frame.FourCC, 8, 16, QChar('0')));
             }
 
             // ── Channel pointers ─────────────────────────────────────────────

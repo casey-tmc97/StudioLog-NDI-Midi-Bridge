@@ -85,7 +85,11 @@ bool FrameValidator::isConsecutive(const SMPTETimecode& prev,
         return n;
     };
 
-    return linearFrame(next) == linearFrame(prev) + 1;
+    // Accept a gap of 1–3 frames.  Some LTC sources (or NDI delivery patterns)
+    // cause libltc to decode only every 2nd or 3rd frame; we still want to lock
+    // as long as the timecode is moving forward monotonically and consistently.
+    const int64_t diff = linearFrame(next) - linearFrame(prev);
+    return diff >= 1 && diff <= 3;
 }
 
 } // namespace StudioLog

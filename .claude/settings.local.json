@@ -9,7 +9,15 @@
       "PowerShell(git clone *)",
       "PowerShell(C:\\\\vcpkg\\\\bootstrap-vcpkg.bat -disableMetrics 2>&1 | Select-Object -Last 5)",
       "PowerShell(aqt list-qt *)",
-      "PowerShell(aqt install-qt *)"
+      "PowerShell(aqt install-qt *)",
+      "PowerShell(Stop-Process *)",
+      "Bash(Stop-Process -Name \"StudioLogNDIMIDIBridge\" -Force)",
+      "Bash(cmake --build build/windows-debug --target StudioLogNDIMIDIBridge --parallel)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(Start-Process \"build\\\\windows-debug\\\\Debug\\\\StudioLogNDIMIDIBridge.exe\" -WorkingDirectory \"build\\\\windows-debug\\\\Debug\")",
+      "PowerShell(Get-Content *)",
+      "PowerShell(cmake *)",
+      "PowerShell(Start-Process \"build\\\\windows-debug\\\\Debug\\\\StudioLogNDIMIDIBridge.exe\" -PassThru | Select-Object Id, ProcessName, HasExited)"
     ]
   }
 }

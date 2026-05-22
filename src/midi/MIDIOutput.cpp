@@ -2,6 +2,7 @@
 #include "util/Logger.h"
 #include <rtmidi/RtMidi.h>
 #include <QMetaObject>
+#include <QTimer>
 #include <vector>
 #include <string>
 
@@ -157,15 +158,38 @@ void MIDIOutput::sendFullFrame(const uint8_t* sysex10)
     sendRaw(sysex10, 10);
 }
 
+// ── Port polling ──────────────────────────────────────────────────────────────
+
+void MIDIOutput::startPortPolling(int intervalMs)
+{
+    if (pollTimer_) return; // already running
+    pollTimer_ = new QTimer(this);
+    pollTimer_->setInterval(intervalMs);
+    connect(pollTimer_, &QTimer::timeout, this, &MIDIOutput::pollPorts);
+    pollTimer_->start();
+}
+
+void MIDIOutput::pollPorts()
+{
+    const QStringList current = availablePorts();
+    if (current != lastKnownPorts_) {
+        lastKnownPorts_ = current;
+        emit portsChanged(current);
+        Logger::info(QString("MIDIOutput: port list updated (%1 port(s))")
+                         .arg(current.size()));
+    }
+}
+
 // ── Platform helpers ──────────────────────────────────────────────────────────
 
 bool MIDIOutput::isLoopMIDIInstalled()
 {
 #ifdef _WIN32
-    // loopMIDI registers a Windows service; its presence confirms the driver is installed.
+    // loopMIDI uses the teVirtualMIDI kernel driver.  Check its HKLM key.
+    // (loopMIDI itself runs as a user-space app, not a Windows service.)
     HKEY hKey = nullptr;
     LONG result = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-                                "SYSTEM\\CurrentControlSet\\Services\\loopmidi",
+                                "SOFTWARE\\Tobias Erichsen\\teVirtualMIDI64",
                                 0, KEY_READ, &hKey);
     if (result == ERROR_SUCCESS) {
         RegCloseKey(hKey);

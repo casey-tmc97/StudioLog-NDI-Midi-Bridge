@@ -52,6 +52,17 @@ void MTCGenerator::setTimecode(const SMPTETimecode& tc)
     tcCv_.notify_one();
 }
 
+/// Convert a timecode to an absolute frame count for discontinuity detection.
+/// Drop-frame correction is omitted intentionally — the few-frame threshold
+/// makes exact DF accounting unnecessary.
+static int64_t tcToTotalFrames(const SMPTETimecode& tc) noexcept
+{
+    return (static_cast<int64_t>(tc.hours) * 3600LL
+          + tc.minutes * 60LL
+          + tc.seconds) * framesPerSecond(tc.fps)
+          + tc.frames;
+}
+
 void MTCGenerator::threadFunc()
 {
 #ifdef _WIN32
@@ -69,29 +80,112 @@ void MTCGenerator::threadFunc()
         tcUpdated_ = false;
     }
 
+    // Log what we are about to send so the user can verify fps / fps-code
+    // matches their DAW's session frame rate (Ardour/Livetrax checks this).
+    {
+        const char* fpsName = "30";
+        switch (currentTC_.fps) {
+            case FPS::FPS_23976:   fpsName = "23.976"; break;
+            case FPS::FPS_24:      fpsName = "24";     break;
+            case FPS::FPS_25:      fpsName = "25";     break;
+            case FPS::FPS_2997DF:  fpsName = "29.97DF"; break;
+            case FPS::FPS_2997NDF: fpsName = "29.97NDF"; break;
+            case FPS::FPS_30:      fpsName = "30";     break;
+        }
+        const uint8_t code = fpsCode(currentTC_.fps);
+        // MIDI MTC fps codes: 0=24, 1=25, 2=29.97DF, 3=30NDF
+        const char* codeName = (code == 0) ? "24fps"
+                             : (code == 1) ? "25fps"
+                             : (code == 2) ? "29.97DF"
+                             :               "30fps-NDF";
+        Logger::info(QString("MTCGenerator: MTC running — LTC=%1fps, "
+                             "MTC fps code=%2 (%3) — "
+                             "verify your DAW session is set to %4")
+                         .arg(fpsName).arg(code).arg(codeName).arg(codeName));
+        if (output_ && output_->isOpen())
+            Logger::info(QString("MTCGenerator: sending to MIDI port \"%1\"")
+                             .arg(output_->currentPortName()));
+        else
+            Logger::warn("MTCGenerator: no MIDI port open — select a port in the UI");
+    }
+
     sendFullFrame(currentTC_);
     qfPiece_ = 0;
 
     auto lastLTCUpdateMs = std::chrono::steady_clock::now();
+    auto lastFullFrameMs = lastLTCUpdateMs; // tracks periodic Full Frame sends
 
     while (!stopRequested_.load(std::memory_order_relaxed)) {
         int64_t intervalNs = qfIntervalNs(currentTC_.fps);
 
-        // TODO: get current time in nanoseconds from HighResTimer
         int64_t nowNs   = HighResTimer::nowNs();
         int64_t targetNs = nowNs + intervalNs;
 
-        // Consume pending timecode update (from LTC thread)
+        // Consume pending timecode update (from LTC thread).
+        //
+        // Key design: Normal LTC arrives once per frame (~33 ms at 30 fps) but
+        // one QF cycle spans 8 messages × ~8.3 ms = ~66 ms.  Resetting qfPiece_
+        // on every LTC frame meant the device only ever saw pieces 0–3 and could
+        // never lock.
+        //
+        // Fix: refresh the freewheel timer on every update, but only apply the
+        // new TC — and only resync — at a QF cycle boundary (piece 0).  This
+        // keeps all 8 nibbles in a cycle consistent and lets the QF stream run
+        // uninterrupted.  A Full-Frame resync is sent only on a genuine
+        // discontinuity (fps change or jump > 4 frames).
         {
             std::lock_guard<std::mutex> lk(tcMutex_);
             if (tcUpdated_) {
-                currentTC_ = pendingTC_;
-                tcUpdated_ = false;
+                // Always refresh the freewheel timer — LTC is alive.
                 lastLTCUpdateMs = std::chrono::steady_clock::now();
 
-                // Re-sync: send full frame and restart QF sequence
+                // Apply the new TC only at the start of a fresh QF cycle so
+                // that mid-cycle nibbles remain consistent.
+                //
+                // Critically: for NORMAL running do NOT override the internal
+                // counter with the incoming LTC value.  The internal counter
+                // advances by exactly 2 frames after every QF cycle (piece 7 →
+                // advanceByTwo()).  Overriding it with each LTC frame — even
+                // when the diff is small — causes the stream to jump backwards
+                // or skip frames (LTC arrives every 1 frame; QF cycles cover 2
+                // frames; so pendingTC_ is always 1 frame behind currentTC_
+                // after advanceByTwo, producing a -1 snap every other cycle).
+                //
+                // Correct policy: let the internal counter free-run; only snap
+                // it back to LTC on a genuine discontinuity (fps change or
+                // jump > 4 frames).
+                if (qfPiece_ == 0) {
+                    const bool fpsMismatch  = (pendingTC_.fps != currentTC_.fps);
+                    const int64_t frameDiff = std::abs(tcToTotalFrames(pendingTC_)
+                                                     - tcToTotalFrames(currentTC_));
+                    const bool discontinuous = fpsMismatch || (frameDiff > 4);
+
+                    tcUpdated_ = false; // always consume the pending update
+
+                    if (discontinuous) {
+                        // Genuine jump or fps change — snap and resync receiver.
+                        currentTC_ = pendingTC_;
+                        Logger::info(QString("MTCGenerator: resync (jump=%1 frames, fpsChange=%2)")
+                                         .arg(frameDiff).arg(fpsMismatch));
+                        sendFullFrame(currentTC_);
+                        lastFullFrameMs = std::chrono::steady_clock::now();
+                        // qfPiece_ is already 0; QF stream continues.
+                    }
+                    // Otherwise: internal counter (advanceByTwo) keeps running.
+                }
+            }
+        }
+
+        // Periodic Full Frame every 10 s — lets a DAW (e.g. Livetrax/Ardour)
+        // that connects mid-stream quickly locate the timecode position and lock
+        // without waiting for the next discontinuity resync.
+        // Only send at piece 0 so it doesn't interrupt a QF cycle.
+        if (qfPiece_ == 0) {
+            auto msSinceFF = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - lastFullFrameMs).count();
+            if (msSinceFF >= 10'000) {
                 sendFullFrame(currentTC_);
-                qfPiece_ = 0;
+                lastFullFrameMs = std::chrono::steady_clock::now();
             }
         }
 

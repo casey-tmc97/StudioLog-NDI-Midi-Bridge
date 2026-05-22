@@ -7,6 +7,7 @@
 // Forward declaration — avoid leaking RtMidi.h into all TUs
 // vcpkg installs to rtmidi/RtMidi.h
 class RtMidiOut;
+class QTimer;
 
 namespace StudioLog {
 
@@ -51,15 +52,24 @@ public:
     /// Check whether loopMIDI appears to be installed (Windows only).
     static bool isLoopMIDIInstalled();
 
+    /// Start polling for MIDI port list changes every @p intervalMs milliseconds.
+    /// Emits portsChanged() when the list changes (new port added / removed).
+    void startPortPolling(int intervalMs = 3000);
+
 signals:
     void portOpened(const QString& name);
     void portClosed();
     void portsChanged(const QStringList& ports);
 
+private slots:
+    void pollPorts();
+
 private:
     std::unique_ptr<RtMidiOut> midi_;
     bool    portOpen_       = false;
     QString currentPortName_;
+    QTimer* pollTimer_      = nullptr;
+    QStringList lastKnownPorts_;
 };
 
 } // namespace StudioLog

@@ -3,6 +3,7 @@
 #include "ndi/AudioRingBuffer.h"
 #include <QObject>
 #include <atomic>
+#include <optional>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -59,6 +60,15 @@ private:
     int         apvPerFrame_ = 1601; ///< Audio samples per LTC frame (auto-updated)
 
     AudioRingBuffer<8192>* ringBuffer_ = nullptr;
+
+    // Decode-thread-only diagnostics (reset in threadFunc on each start)
+    int totalLtcFrames_ = 0;
+    int valFailCount_   = 0;
+
+    // Duplicate-frame filter: skip a decoded frame whose TC equals the last one.
+    // libltc can re-detect the same LTC frame at both the tail and the following
+    // sync word, producing identical consecutive entries in the decode queue.
+    std::optional<SMPTETimecode> lastDecodedTC_;
 
     std::thread        thread_;
     std::atomic<bool>  running_{false};
