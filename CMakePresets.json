@@ -15,7 +15,7 @@
       "name": "windows-msvc-debug",
       "displayName": "Windows MSVC Debug",
       "inherits": "base",
-      "generator": "Visual Studio 18 2025",
+      "generator": "Visual Studio 18 2026",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/windows-debug",
       "cacheVariables": {
@@ -27,7 +27,7 @@
       "name": "windows-msvc-release",
       "displayName": "Windows MSVC Release",
       "inherits": "base",
-      "generator": "Visual Studio 18 2025",
+      "generator": "Visual Studio 18 2026",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/windows-release",
       "cacheVariables": {
@@ -39,7 +39,7 @@
       "name": "windows-msvc-relwithdebinfo",
       "displayName": "Windows MSVC RelWithDebInfo",
       "inherits": "base",
-      "generator": "Visual Studio 18 2025",
+      "generator": "Visual Studio 18 2026",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/windows-relwithdebinfo",
       "cacheVariables": {
