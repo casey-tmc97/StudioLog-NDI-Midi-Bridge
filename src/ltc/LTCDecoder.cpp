@@ -220,10 +220,12 @@ void LTCDecoder::processDecodedFrame(const LTCFrame& raw, long /*pos*/)
         latestFrame_ = tc;
     }
 
-    // Forward validated frame to main thread
-    QMetaObject::invokeMethod(this,
-        [this, tc]{ emit frameDecoded(tc); },
-        Qt::QueuedConnection);
+    // Forward validated frame — emit directly from the decode thread.
+    // MTCGenerator::setTimecode() is mutex-protected and thread-safe.
+    // Other receivers on the main thread use Qt::AutoConnection which
+    // automatically falls back to Qt::QueuedConnection for cross-thread
+    // delivery, so no manual marshalling is needed here.
+    emit frameDecoded(tc);
 
     // Signal lock acquisition on the first validated frame after startup or dropout
     if (!locked_.load(std::memory_order_relaxed)) {

@@ -100,11 +100,12 @@ void Application::connectSignals()
             }, Qt::QueuedConnection);
 
     // ─── LTC Decoder → MTC Generator (timecode feed, thread-safe) ───────────
-    // setTimecode() is the only thread-safe MTCGenerator call; QueuedConnection
-    // posts to the main thread which then calls it — low enough latency for MTC.
+    // DirectConnection: frameDecoded is emitted from the LTC decode thread;
+    // setTimecode() is mutex-protected so direct cross-thread delivery is safe
+    // and eliminates the two-hop event-loop latency that caused resync bursts.
     connect(ltcDecoder_.get(), &LTCDecoder::frameDecoded,
             mtcGenerator_.get(), &MTCGenerator::setTimecode,
-            Qt::QueuedConnection);
+            Qt::DirectConnection);
 
     // ─── LTC lock → start MTC Generator ──────────────────────────────────────
     // Start the QF output thread on lock acquisition.  On lock loss, the thread
