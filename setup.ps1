@@ -434,7 +434,87 @@ function Invoke-StageNdi {
     Write-Ok "NDI Advanced SDK verified."
     $script:Summary['NDI SDK'] = "✅  third_party/NDI/include/Processing.NDI.Lib.h"
 }
-function Invoke-StageBuild   { Write-Info "build stage — not yet implemented"   }
+function Invoke-StageBuild {
+    Write-Head "Stage 3: Configure + Build ($Config)"
+
+    # ── Ensure cmake is on PATH ──────────────────────────────────────────────
+    if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+        $vs = Get-VSInfo
+        if ($vs) { Add-CMakeToPath $vs.InstallPath }
+    }
+    if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+        Write-Fail "cmake not found — run '.\setup.ps1 -Stage prereqs' first."
+        $script:Summary['Build'] = "❌  cmake not on PATH"
+        return
+    }
+
+    # ── Load env vars from user scope (supports re-entry after prereqs) ──────
+    if (-not $env:VCPKG_ROOT) {
+        $env:VCPKG_ROOT = [System.Environment]::GetEnvironmentVariable('VCPKG_ROOT', 'User')
+    }
+    if (-not $env:Qt6_DIR) {
+        $env:Qt6_DIR = [System.Environment]::GetEnvironmentVariable('Qt6_DIR', 'User')
+    }
+
+    if (-not $env:VCPKG_ROOT) {
+        Write-Fail "VCPKG_ROOT not set — run '.\setup.ps1 -Stage prereqs' first."
+        $script:Summary['Build'] = "❌  VCPKG_ROOT missing"
+        return
+    }
+    if (-not $env:Qt6_DIR) {
+        Write-Fail "Qt6_DIR not set — run '.\setup.ps1 -Stage prereqs' first."
+        $script:Summary['Build'] = "❌  Qt6_DIR missing"
+        return
+    }
+
+    # ── Add Qt bin/ so windeployqt is found by the CMake post-build step ────
+    # Qt6_DIR = .../<version>/<arch>/lib/cmake/Qt6  →  strip 3 levels for <arch>/ root
+    $qtRoot = Split-Path (Split-Path (Split-Path $env:Qt6_DIR))
+    $qt6Bin = Join-Path $qtRoot "bin"
+    if (Test-Path $qt6Bin) { $env:PATH = "$qt6Bin;$env:PATH" }
+
+    # ── Select presets based on -Config ─────────────────────────────────────
+    $configPreset = if ($Config -eq 'Release') { 'windows-msvc-release' } else { 'windows-msvc-debug' }
+    $buildPreset  = if ($Config -eq 'Release') { 'windows-release'      } else { 'windows-debug'      }
+
+    # ── cmake configure ──────────────────────────────────────────────────────
+    Write-Info "cmake --preset $configPreset"
+    $configOut = cmake --preset $configPreset 2>&1
+    $configOut | Write-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "cmake configure failed. Last 30 lines:"
+        $configOut | Select-Object -Last 30 | ForEach-Object {
+            Write-Host "    $_" -ForegroundColor Red
+        }
+        $script:Summary['Build'] = "❌  configure failed"
+        exit 1
+    }
+    Write-Ok "CMake configure succeeded"
+
+    # ── cmake build ──────────────────────────────────────────────────────────
+    Write-Info "cmake --build --preset $buildPreset"
+    $buildOut = cmake --build --preset $buildPreset 2>&1
+    $buildOut | Write-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "cmake build failed. Last 30 lines:"
+        $buildOut | Select-Object -Last 30 | ForEach-Object {
+            Write-Host "    $_" -ForegroundColor Red
+        }
+        $script:Summary['Build'] = "❌  build failed"
+        exit 1
+    }
+
+    # ── Locate and report the exe ─────────────────────────────────────────────
+    $buildDir = Join-Path $PSScriptRoot "build\windows-$($Config.ToLower())\$Config"
+    $exe      = Join-Path $buildDir "StudioLogNDIMIDIBridge.exe"
+    if (Test-Path $exe) {
+        Write-Ok "Build succeeded → $exe"
+        $script:Summary['Build'] = "✅  $exe"
+    } else {
+        Write-Ok "Build succeeded (exe in: $buildDir)"
+        $script:Summary['Build'] = "✅  $buildDir"
+    }
+}
 function Show-Summary        { Write-Info "summary — not yet implemented"        }
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
