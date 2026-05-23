@@ -518,21 +518,37 @@ function Invoke-StageBuild {
     }
 }
 function Show-Summary {
+    $inner = 58
     Write-Host ""
-    Write-Host "╔══════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "╔$('═' * $inner)╗" -ForegroundColor Cyan
     Write-Host "║       StudioLog NDI/MIDI Bridge — Setup Summary          ║" -ForegroundColor Cyan
-    Write-Host "╠══════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
+    Write-Host "╠$('═' * $inner)╣" -ForegroundColor Cyan
 
     foreach ($key in $script:Summary.Keys) {
         $val   = $script:Summary[$key]
-        $color = if ($val -match '^✅') { 'Green' } `
-            elseif ($val -match '^❌')  { 'Red'   } `
-            else                        { 'Yellow' }
-        $cell = "  {0,-16} {1}" -f ($key + ':'), $val
-        Write-Host ("║" + $cell.PadRight(58) + "║") -ForegroundColor $color
+        $color = if ($val -match '^✅')    { 'Green'  }
+                 elseif ($val -match '^❌') { 'Red'    }
+                 else                       { 'Yellow' }
+
+        # ✅ and ❌ are each 1 code unit but 2 terminal columns (wide emoji).
+        # ⏭️ is 2 code units and 2 terminal columns — balanced, no correction needed.
+        # Reduce padTarget by the number of wide-emoji chars so the right border aligns.
+        $wide      = ([regex]::Matches($val, '[✅❌]')).Count
+        $padTarget = $inner - $wide
+        $label     = "  {0,-16} " -f ($key + ':')              # always 19 ASCII chars
+
+        # Max code units for $val before it overflows the inner box width:
+        #   display_width($cell) = label.Length + dispVal.Length + wide ≤ padTarget
+        #   → dispVal.Length ≤ padTarget - label.Length - wide
+        $maxValLen = $padTarget - $label.Length - $wide
+        $dispVal   = if ($val.Length -gt $maxValLen) {
+                         $val.Substring(0, [Math]::Max(0, $maxValLen - 1)) + '…'
+                     } else { $val }
+
+        Write-Host ("║" + ($label + $dispVal).PadRight($padTarget) + "║") -ForegroundColor $color
     }
 
-    Write-Host "╚══════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host "╚$('═' * $inner)╝" -ForegroundColor Cyan
     Write-Host ""
 
     if ($script:Failures.Count -gt 0) {
