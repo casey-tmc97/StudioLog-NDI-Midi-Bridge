@@ -445,6 +445,7 @@ function Invoke-StageBuild {
     if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
         Write-Fail "cmake not found — run '.\setup.ps1 -Stage prereqs' first."
         $script:Summary['Build'] = "❌  cmake not on PATH"
+        Add-Failure "Build: cmake not on PATH — run '.\setup.ps1 -Stage prereqs' first."
         return
     }
 
@@ -459,11 +460,13 @@ function Invoke-StageBuild {
     if (-not $env:VCPKG_ROOT) {
         Write-Fail "VCPKG_ROOT not set — run '.\setup.ps1 -Stage prereqs' first."
         $script:Summary['Build'] = "❌  VCPKG_ROOT missing"
+        Add-Failure "Build: VCPKG_ROOT not set — run '.\setup.ps1 -Stage prereqs' first."
         return
     }
     if (-not $env:Qt6_DIR) {
         Write-Fail "Qt6_DIR not set — run '.\setup.ps1 -Stage prereqs' first."
         $script:Summary['Build'] = "❌  Qt6_DIR missing"
+        Add-Failure "Build: Qt6_DIR not set — run '.\setup.ps1 -Stage prereqs' first."
         return
     }
 
