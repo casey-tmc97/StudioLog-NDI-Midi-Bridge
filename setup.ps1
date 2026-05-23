@@ -62,7 +62,7 @@ function Get-VSInfo {
     $major = [int]($version -split '\.')[0]
     $generator = switch ($major) {
         17      { "Visual Studio 17 2022" }
-        18      { "Visual Studio 18 2025" }
+        18      { "Visual Studio 18 2026" }
         default { $null }
     }
 
@@ -490,6 +490,7 @@ function Invoke-StageBuild {
             Write-Host "    $_" -ForegroundColor Red
         }
         $script:Summary['Build'] = "❌  configure failed"
+        Add-Failure "Build: cmake configure failed — see output above."
         Show-Summary
         exit 1
     }
@@ -505,6 +506,7 @@ function Invoke-StageBuild {
             Write-Host "    $_" -ForegroundColor Red
         }
         $script:Summary['Build'] = "❌  build failed"
+        Add-Failure "Build: cmake build failed — see output above."
         Show-Summary
         exit 1
     }

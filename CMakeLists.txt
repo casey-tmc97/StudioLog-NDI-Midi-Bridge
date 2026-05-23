@@ -14,8 +14,17 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 # ── RtMidi (via vcpkg) ───────────────────────────────────────────────────────
 find_package(rtmidi CONFIG REQUIRED)
 
-# ── libltc (git submodule) ───────────────────────────────────────────────────
-add_subdirectory(third_party/libltc EXCLUDE_FROM_ALL)
+# ── libltc (git submodule — autotools project; compiled directly via CMake) ──
+add_library(ltc STATIC
+    third_party/libltc/src/ltc.c
+    third_party/libltc/src/decoder.c
+    third_party/libltc/src/encoder.c
+    third_party/libltc/src/timecode.c
+)
+target_include_directories(ltc PUBLIC third_party/libltc/src)
+if(MSVC)
+    target_compile_definitions(ltc PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 
 # ── Vizrt NDI Advanced SDK ───────────────────────────────────────────────────
 set(NDI_SDK_DIR "${CMAKE_SOURCE_DIR}/third_party/NDI"
