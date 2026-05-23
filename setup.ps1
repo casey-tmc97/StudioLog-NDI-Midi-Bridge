@@ -99,6 +99,19 @@ function Invoke-PatchCMakePresets ([string]$Generator) {
     }
 }
 
+# ─── CMake PATH ───────────────────────────────────────────────────────────────
+function Add-CMakeToPath ([string]$VSInstallPath) {
+    if (Get-Command cmake -ErrorAction SilentlyContinue) { return $null }
+
+    $cmakeBin = Join-Path $VSInstallPath `
+        "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
+
+    if (-not (Test-Path (Join-Path $cmakeBin "cmake.exe"))) { return $null }
+
+    $env:PATH = "$cmakeBin;$env:PATH"
+    return $cmakeBin
+}
+
 # ─── Stage placeholders (replaced in later tasks) ─────────────────────────────
 function Invoke-StagePrereqs { Write-Info "prereqs stage — not yet implemented" }
 function Invoke-StageNdi     { Write-Info "ndi stage — not yet implemented"     }
