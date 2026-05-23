@@ -45,6 +45,60 @@ $script:Failures = [System.Collections.Generic.List[string]]::new()
 $script:Summary  = [ordered]@{}
 function Add-Failure ([string]$msg) { $script:Failures.Add($msg) }
 
+# ─── VS detection ─────────────────────────────────────────────────────────────
+function Get-VSInfo {
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswhere)) { return $null }
+
+    $installPath = & $vswhere -latest -products * `
+        -requires Microsoft.VisualCpp.Tools.HostX64.TargetX64 `
+        -property installationPath 2>$null
+    $version = & $vswhere -latest -products * `
+        -requires Microsoft.VisualCpp.Tools.HostX64.TargetX64 `
+        -property installationVersion 2>$null
+
+    if (-not $installPath -or -not $version) { return $null }
+
+    $major = [int]($version -split '\.')[0]
+    $generator = switch ($major) {
+        17      { "Visual Studio 17 2022" }
+        18      { "Visual Studio 18 2025" }
+        default { $null }
+    }
+
+    return [PSCustomObject]@{
+        InstallPath = $installPath.Trim()
+        Version     = $version.Trim()
+        Major       = $major
+        Generator   = $generator
+    }
+}
+
+# ─── CMakePresets.json patching ───────────────────────────────────────────────
+function Invoke-PatchCMakePresets ([string]$Generator) {
+    $presetsFile = Join-Path $PSScriptRoot "CMakePresets.json"
+    $content     = Get-Content $presetsFile -Raw
+
+    $pattern     = '"generator":\s*"Visual Studio \d+ \d+"'
+    $replacement = "`"generator`": `"$Generator`""
+    $patched     = [regex]::Replace($content, $pattern, $replacement)
+
+    if ($patched -eq $content) {
+        Write-Skip "CMakePresets.json already uses: $Generator"
+        return
+    }
+
+    Set-Content -Path $presetsFile -Value $patched -Encoding UTF8 -NoNewline
+    Write-Ok "Patched CMakePresets.json → $Generator"
+
+    $dirty = git -C $PSScriptRoot status --porcelain CMakePresets.json 2>$null
+    if ($dirty) {
+        git -C $PSScriptRoot add CMakePresets.json
+        git -C $PSScriptRoot commit -m "chore: sync CMakePresets.json generator to installed VS ($Generator)"
+        Write-Ok "Committed CMakePresets.json update"
+    }
+}
+
 # ─── Stage placeholders (replaced in later tasks) ─────────────────────────────
 function Invoke-StagePrereqs { Write-Info "prereqs stage — not yet implemented" }
 function Invoke-StageNdi     { Write-Info "ndi stage — not yet implemented"     }
