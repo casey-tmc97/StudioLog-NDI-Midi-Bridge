@@ -271,6 +271,44 @@ function Install-Vcpkg {
     Install-VcpkgPackages $vcpkgRoot
 }
 
+# ─── loopMIDI ─────────────────────────────────────────────────────────────────
+function Test-LoopMidi {
+    $regPaths = @(
+        'HKCU:\Software\Tobias Erichsen\loopMIDI',
+        'HKLM:\Software\Tobias Erichsen\loopMIDI',
+        'HKLM:\Software\WOW6432Node\Tobias Erichsen\loopMIDI',
+        'HKLM:\SYSTEM\CurrentControlSet\Services\loopMIDI'
+    )
+    foreach ($p in $regPaths) {
+        if (Test-Path $p) { return $true }
+    }
+    # Also check via winget list
+    $listed = winget list --id TobiasErichsen.loopMIDI 2>$null | Select-String 'loopMIDI'
+    return [bool]$listed
+}
+
+function Install-LoopMidi {
+    if (Test-LoopMidi) {
+        Write-Skip "loopMIDI already installed"
+        $script:Summary['loopMIDI'] = "✅  installed"
+        return
+    }
+
+    Write-Info "Installing loopMIDI via winget…"
+    winget install --id TobiasErichsen.loopMIDI --silent `
+        --accept-source-agreements --accept-package-agreements 2>&1 | Write-Host
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok "loopMIDI installed — launch it and create a virtual MIDI port before running the app."
+        $script:Summary['loopMIDI'] = "✅  installed (create a virtual port before running the app)"
+    } else {
+        Write-Fail "winget install loopMIDI failed — install manually."
+        Write-Host "    https://www.tobias-erichsen.de/software/loopmidi.html" -ForegroundColor Yellow
+        Add-Failure "loopMIDI: install manually from https://www.tobias-erichsen.de/software/loopmidi.html"
+        $script:Summary['loopMIDI'] = "❌  install failed (runtime only — build continues)"
+    }
+}
+
 # ─── Stage placeholders (replaced in later tasks) ─────────────────────────────
 function Invoke-StagePrereqs { Write-Info "prereqs stage — not yet implemented" }
 function Invoke-StageNdi     { Write-Info "ndi stage — not yet implemented"     }
