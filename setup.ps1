@@ -112,6 +112,80 @@ function Add-CMakeToPath ([string]$VSInstallPath) {
     return $cmakeBin
 }
 
+# ─── Qt 6 ─────────────────────────────────────────────────────────────────────
+$script:QT_VERSION = '6.8.3'
+$script:QT_ARCH    = 'win64_msvc2022_64'
+$script:QT_ROOT    = 'C:\Qt'
+
+function Test-Qt6 {
+    # 1. -Qt6Dir override
+    if ($Qt6Dir -and (Test-Path (Join-Path $Qt6Dir "Qt6Config.cmake"))) {
+        return $Qt6Dir
+    }
+    # 2. User env var
+    $envDir = [System.Environment]::GetEnvironmentVariable('Qt6_DIR', 'User')
+    if ($envDir -and (Test-Path (Join-Path $envDir "Qt6Config.cmake"))) {
+        return $envDir
+    }
+    # 3. Known default path (arch arg matches disk dir name)
+    $default = "$script:QT_ROOT\$script:QT_VERSION\$script:QT_ARCH\lib\cmake\Qt6"
+    if (Test-Path (Join-Path $default "Qt6Config.cmake")) { return $default }
+    # 4. Scan under QT_ROOT\QT_VERSION\ — aqt may shorten the arch dir name
+    $versionDir = "$script:QT_ROOT\$script:QT_VERSION"
+    if (Test-Path $versionDir) {
+        $found = Get-ChildItem -Path $versionDir -Directory |
+            ForEach-Object { Join-Path $_.FullName "lib\cmake\Qt6" } |
+            Where-Object   { Test-Path (Join-Path $_ "Qt6Config.cmake") } |
+            Select-Object  -First 1
+        if ($found) { return $found }
+    }
+    return $null
+}
+
+function Install-Qt6 {
+    $found = Test-Qt6
+    if ($found) {
+        $env:Qt6_DIR = $found
+        Write-Skip "Qt $script:QT_VERSION already at $found"
+        $script:Summary['Qt 6'] = "✅  $script:QT_VERSION  $found"
+        return
+    }
+
+    Write-Info "Installing Qt $script:QT_VERSION via aqtinstall (this takes a few minutes)…"
+
+    # Ensure aqtinstall is available
+    if (-not (Get-Command aqt -ErrorAction SilentlyContinue)) {
+        pip install aqtinstall --quiet 2>&1 | Write-Host
+        if ($LASTEXITCODE -ne 0) {
+            Add-Failure "pip install aqtinstall failed. Ensure Python/pip is on PATH."
+            $script:Summary['Qt 6'] = "❌  aqtinstall unavailable"
+            return
+        }
+    }
+
+    python -m aqt install-qt windows desktop $script:QT_VERSION $script:QT_ARCH `
+        -O $script:QT_ROOT 2>&1 | Write-Host
+
+    if ($LASTEXITCODE -ne 0) {
+        Add-Failure "Qt install failed. Run manually: python -m aqt install-qt windows desktop $script:QT_VERSION $script:QT_ARCH -O $script:QT_ROOT"
+        $script:Summary['Qt 6'] = "❌  install failed"
+        return
+    }
+
+    # Discover the actual installed cmake dir (aqt may shorten the arch dir name)
+    $qt6Dir = Test-Qt6
+    if (-not $qt6Dir) {
+        Add-Failure "Qt install reported success but Qt6Config.cmake not found under $script:QT_ROOT\$script:QT_VERSION"
+        $script:Summary['Qt 6'] = "❌  cmake dir not found after install"
+        return
+    }
+
+    [System.Environment]::SetEnvironmentVariable('Qt6_DIR', $qt6Dir, 'User')
+    $env:Qt6_DIR = $qt6Dir
+    Write-Ok "Qt $script:QT_VERSION installed → $qt6Dir"
+    $script:Summary['Qt 6'] = "✅  $script:QT_VERSION  $qt6Dir"
+}
+
 # ─── Stage placeholders (replaced in later tasks) ─────────────────────────────
 function Invoke-StagePrereqs { Write-Info "prereqs stage — not yet implemented" }
 function Invoke-StageNdi     { Write-Info "ndi stage — not yet implemented"     }
