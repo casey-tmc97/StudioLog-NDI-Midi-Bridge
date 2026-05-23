@@ -212,9 +212,12 @@ function Install-VcpkgPackages ([string]$VcpkgPath) {
         # Pre-install here to surface errors early and speed up the first cmake configure.
         Write-Info "Installing vcpkg packages from vcpkg.json (manifest mode)…"
         Push-Location $PSScriptRoot
-        & $vcpkgExe install --triplet x64-windows 2>&1 | Write-Host
-        $ec = $LASTEXITCODE
-        Pop-Location
+        try {
+            & $vcpkgExe install --triplet x64-windows 2>&1 | Write-Host
+            $ec = $LASTEXITCODE
+        } finally {
+            Pop-Location
+        }
         if ($ec -ne 0) {
             Add-Failure "vcpkg install (manifest mode) failed — see output above."
         } else {
