@@ -310,7 +310,68 @@ function Install-LoopMidi {
 }
 
 # ─── Stage placeholders (replaced in later tasks) ─────────────────────────────
-function Invoke-StagePrereqs { Write-Info "prereqs stage — not yet implemented" }
+function Invoke-StagePrereqs {
+    Write-Head "Stage 1: Prerequisites"
+
+    # ── VS BuildTools + CMake ────────────────────────────────────────────────
+    if ('vs' -notin $Skip -and 'cmake' -notin $Skip) {
+        $vs = Get-VSInfo
+        if (-not $vs) {
+            Add-Failure "VS BuildTools not found. Install from: https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022"
+            $script:Summary['VS BuildTools'] = "❌  not found"
+            $script:Summary['CMake']         = "❌  depends on VS"
+        } elseif (-not $vs.Generator) {
+            Add-Failure "Unknown VS major version $($vs.Major) — update Get-VSInfo generator map in setup.ps1."
+            $script:Summary['VS BuildTools'] = "❌  unknown version $($vs.Major)"
+            $script:Summary['CMake']         = "❌  unknown VS version"
+        } else {
+            Write-Ok "VS BuildTools $($vs.Version) → generator: $($vs.Generator)"
+            $script:Summary['VS BuildTools'] = "✅  $($vs.Version)  ($($vs.Generator))"
+            Invoke-PatchCMakePresets $vs.Generator
+            $cmakeBin = Add-CMakeToPath $vs.InstallPath
+            if ($cmakeBin) { Write-Ok "CMake added to PATH from VS BuildTools" }
+            $cmakeVer = (cmake --version 2>$null | Select-Object -First 1) -replace 'cmake version ', ''
+            $script:Summary['CMake'] = "✅  $cmakeVer  (VS BuildTools)"
+        }
+    } else {
+        Write-Skip "VS / CMake (in -Skip list)"
+        $script:Summary['VS BuildTools'] = "⏭️  skipped"
+        $script:Summary['CMake']         = "⏭️  skipped"
+    }
+
+    # ── Qt 6 ────────────────────────────────────────────────────────────────
+    if ('qt' -notin $Skip) {
+        Install-Qt6
+    } else {
+        Write-Skip "Qt 6 (in -Skip list)"
+        $script:Summary['Qt 6'] = "⏭️  skipped"
+    }
+
+    # ── vcpkg ───────────────────────────────────────────────────────────────
+    if ('vcpkg' -notin $Skip) {
+        Install-Vcpkg
+    } else {
+        Write-Skip "vcpkg (in -Skip list)"
+        $script:Summary['vcpkg'] = "⏭️  skipped"
+    }
+
+    # ── loopMIDI ────────────────────────────────────────────────────────────
+    if ('loopmidi' -notin $Skip) {
+        Install-LoopMidi
+    } else {
+        Write-Skip "loopMIDI (in -Skip list)"
+        $script:Summary['loopMIDI'] = "⏭️  skipped"
+    }
+
+    # ── Report any failures ──────────────────────────────────────────────────
+    if ($script:Failures.Count -gt 0) {
+        Write-Host ""
+        Write-Host "  The following items need attention before the build:" -ForegroundColor Red
+        foreach ($f in $script:Failures) {
+            Write-Host "    • $f" -ForegroundColor Red
+        }
+    }
+}
 function Invoke-StageNdi     { Write-Info "ndi stage — not yet implemented"     }
 function Invoke-StageBuild   { Write-Info "build stage — not yet implemented"   }
 function Show-Summary        { Write-Info "summary — not yet implemented"        }
