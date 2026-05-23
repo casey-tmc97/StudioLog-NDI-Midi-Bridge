@@ -517,7 +517,32 @@ function Invoke-StageBuild {
         $script:Summary['Build'] = "✅  $buildDir"
     }
 }
-function Show-Summary        { Write-Info "summary — not yet implemented"        }
+function Show-Summary {
+    Write-Host ""
+    Write-Host "╔══════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║       StudioLog NDI/MIDI Bridge — Setup Summary          ║" -ForegroundColor Cyan
+    Write-Host "╠══════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
+
+    foreach ($key in $script:Summary.Keys) {
+        $val   = $script:Summary[$key]
+        $color = if ($val -match '^✅') { 'Green' } `
+            elseif ($val -match '^❌')  { 'Red'   } `
+            else                        { 'Yellow' }
+        $cell = "  {0,-16} {1}" -f ($key + ':'), $val
+        Write-Host ("║" + $cell.PadRight(58) + "║") -ForegroundColor $color
+    }
+
+    Write-Host "╚══════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host ""
+
+    if ($script:Failures.Count -gt 0) {
+        Write-Host "  ❌  $($script:Failures.Count) item(s) need attention — fix them, then re-run .\setup.ps1" `
+            -ForegroundColor Red
+    } else {
+        Write-Host "  🎉  All checks passed." -ForegroundColor Green
+    }
+    Write-Host ""
+}
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 function Main {
