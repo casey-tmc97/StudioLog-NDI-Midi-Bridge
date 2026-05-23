@@ -372,7 +372,68 @@ function Invoke-StagePrereqs {
         }
     }
 }
-function Invoke-StageNdi     { Write-Info "ndi stage — not yet implemented"     }
+function Invoke-StageNdi {
+    Write-Head "Stage 2: NDI Advanced SDK"
+
+    $headerFile = Join-Path $PSScriptRoot "third_party\NDI\include\Processing.NDI.Lib.h"
+    $libFile    = Join-Path $PSScriptRoot "third_party\NDI\Lib\x64\Processing.NDI.Lib.x64.lib"
+    $dllFile    = Join-Path $PSScriptRoot "third_party\NDI\Bin\x64\Processing.NDI.Lib.x64.dll"
+
+    $allPresent = (Test-Path $headerFile) -and (Test-Path $libFile) -and (Test-Path $dllFile)
+
+    if ($allPresent) {
+        Write-Ok "NDI Advanced SDK found at third_party/NDI/"
+        $script:Summary['NDI SDK'] = "✅  third_party/NDI/include/Processing.NDI.Lib.h"
+        return
+    }
+
+    Write-Fail "NDI Advanced SDK files missing:"
+    if (-not (Test-Path $headerFile)) {
+        Write-Host "    third_party\NDI\include\Processing.NDI.Lib.h" -ForegroundColor Red
+    }
+    if (-not (Test-Path $libFile)) {
+        Write-Host "    third_party\NDI\Lib\x64\Processing.NDI.Lib.x64.lib" -ForegroundColor Red
+    }
+    if (-not (Test-Path $dllFile)) {
+        Write-Host "    third_party\NDI\Bin\x64\Processing.NDI.Lib.x64.dll" -ForegroundColor Red
+    }
+
+    Write-Host @"
+
+  Expected layout after placing the SDK:
+  third_party/NDI/
+  ├── include/
+  │   └── Processing.NDI.Lib.h
+  ├── Lib/
+  │   └── x64/
+  │       └── Processing.NDI.Lib.x64.lib
+  └── Bin/
+      └── x64/
+          └── Processing.NDI.Lib.x64.dll
+"@ -ForegroundColor Gray
+
+    Write-Info "Opening NDI SDK download page in your browser…"
+    Start-Process "https://ndi.video/for-developers/ndi-sdk/"
+
+    Write-Host ""
+    Write-Host "  1. Download the 'NDI Advanced SDK for Windows' (free registration)." -ForegroundColor Yellow
+    Write-Host "  2. Install / unzip it." -ForegroundColor Yellow
+    Write-Host "  3. Copy the files into third_party/NDI/ as shown above." -ForegroundColor Yellow
+    Write-Host ""
+    Read-Host "  Press Enter once the SDK files are in place (Ctrl+C to abort)"
+
+    # Re-validate
+    $allPresent = (Test-Path $headerFile) -and (Test-Path $libFile) -and (Test-Path $dllFile)
+    if (-not $allPresent) {
+        Write-Fail "NDI SDK still missing after confirmation. Re-run .\setup.ps1 after placing the files."
+        $script:Summary['NDI SDK'] = "❌  missing after confirmation"
+        Add-Failure "NDI SDK: place files in third_party/NDI/ then re-run .\setup.ps1"
+        return
+    }
+
+    Write-Ok "NDI Advanced SDK verified."
+    $script:Summary['NDI SDK'] = "✅  third_party/NDI/include/Processing.NDI.Lib.h"
+}
 function Invoke-StageBuild   { Write-Info "build stage — not yet implemented"   }
 function Show-Summary        { Write-Info "summary — not yet implemented"        }
 
