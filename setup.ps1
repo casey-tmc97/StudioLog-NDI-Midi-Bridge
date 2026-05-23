@@ -186,6 +186,88 @@ function Install-Qt6 {
     $script:Summary['Qt 6'] = "✅  $script:QT_VERSION  $qt6Dir"
 }
 
+# ─── vcpkg ────────────────────────────────────────────────────────────────────
+function Test-Vcpkg {
+    # 1. -VcpkgRoot override
+    if ($VcpkgRoot -and (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
+        return $VcpkgRoot
+    }
+    # 2. User env var
+    $envRoot = [System.Environment]::GetEnvironmentVariable('VCPKG_ROOT', 'User')
+    if ($envRoot -and (Test-Path (Join-Path $envRoot "vcpkg.exe"))) {
+        return $envRoot
+    }
+    # 3. Known default path
+    $default = Join-Path $env:USERPROFILE "vcpkg"
+    if (Test-Path (Join-Path $default "vcpkg.exe")) { return $default }
+    return $null
+}
+
+function Install-VcpkgPackages ([string]$VcpkgPath) {
+    $vcpkgExe    = Join-Path $VcpkgPath "vcpkg.exe"
+    $manifestFile = Join-Path $PSScriptRoot "vcpkg.json"
+
+    if (Test-Path $manifestFile) {
+        # Manifest mode — vcpkg.json declares rtmidi; cmake installs it automatically.
+        # Pre-install here to surface errors early and speed up the first cmake configure.
+        Write-Info "Installing vcpkg packages from vcpkg.json (manifest mode)…"
+        Push-Location $PSScriptRoot
+        & $vcpkgExe install --triplet x64-windows 2>&1 | Write-Host
+        $ec = $LASTEXITCODE
+        Pop-Location
+        if ($ec -ne 0) {
+            Add-Failure "vcpkg install (manifest mode) failed — see output above."
+        } else {
+            Write-Ok "vcpkg packages installed (manifest mode)"
+        }
+    } else {
+        # Classic mode — install rtmidi directly
+        $installed = & $vcpkgExe list 2>$null | Select-String 'rtmidi'
+        if ($installed) {
+            Write-Skip "rtmidi:x64-windows already in vcpkg"
+            return
+        }
+        Write-Info "Installing rtmidi:x64-windows via vcpkg…"
+        & $vcpkgExe install rtmidi:x64-windows 2>&1 | Write-Host
+        if ($LASTEXITCODE -ne 0) {
+            Add-Failure "vcpkg install rtmidi:x64-windows failed — see output above."
+        } else {
+            Write-Ok "rtmidi:x64-windows installed"
+        }
+    }
+}
+
+function Install-Vcpkg {
+    $found = Test-Vcpkg
+    if ($found) {
+        $env:VCPKG_ROOT = $found
+        Write-Skip "vcpkg already at $found"
+        $script:Summary['vcpkg'] = "✅  $found"
+        Install-VcpkgPackages $found
+        return
+    }
+
+    $vcpkgRoot = Join-Path $env:USERPROFILE "vcpkg"
+    Write-Info "Cloning vcpkg to $vcpkgRoot…"
+    git clone https://github.com/microsoft/vcpkg $vcpkgRoot 2>&1 | Write-Host
+
+    Write-Info "Bootstrapping vcpkg…"
+    & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics 2>&1 | Write-Host
+
+    if (-not (Test-Path (Join-Path $vcpkgRoot "vcpkg.exe"))) {
+        Add-Failure "vcpkg bootstrap failed — check output above."
+        $script:Summary['vcpkg'] = "❌  bootstrap failed"
+        return
+    }
+
+    [System.Environment]::SetEnvironmentVariable('VCPKG_ROOT', $vcpkgRoot, 'User')
+    $env:VCPKG_ROOT = $vcpkgRoot
+    Write-Ok "vcpkg installed → $vcpkgRoot"
+    $script:Summary['vcpkg'] = "✅  $vcpkgRoot"
+
+    Install-VcpkgPackages $vcpkgRoot
+}
+
 # ─── Stage placeholders (replaced in later tasks) ─────────────────────────────
 function Invoke-StagePrereqs { Write-Info "prereqs stage — not yet implemented" }
 function Invoke-StageNdi     { Write-Info "ndi stage — not yet implemented"     }
