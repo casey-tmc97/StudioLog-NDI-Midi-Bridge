@@ -487,6 +487,7 @@ function Invoke-StageBuild {
             Write-Host "    $_" -ForegroundColor Red
         }
         $script:Summary['Build'] = "❌  configure failed"
+        Show-Summary
         exit 1
     }
     Write-Ok "CMake configure succeeded"
@@ -501,6 +502,7 @@ function Invoke-StageBuild {
             Write-Host "    $_" -ForegroundColor Red
         }
         $script:Summary['Build'] = "❌  build failed"
+        Show-Summary
         exit 1
     }
 
