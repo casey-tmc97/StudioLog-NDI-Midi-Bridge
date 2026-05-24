@@ -3,7 +3,6 @@
 #include <rtmidi/RtMidi.h>
 #include <QMetaObject>
 #include <QTimer>
-#include <vector>
 #include <string>
 
 #ifdef _WIN32
@@ -81,18 +80,25 @@ bool MIDIOutput::openPort(const QString& portName)
     // Case-insensitive partial match — lets "loopMIDI" match "loopMIDI Port 1", etc.
     for (int i = 0; i < ports.size(); ++i) {
         if (ports[i].contains(portName, Qt::CaseInsensitive)) {
-            try {
-                midi_->openPort(static_cast<unsigned>(i), "StudioLog MTC Out");
-            } catch (const RtMidiError& e) {
-                Logger::error(QString("MIDIOutput: openPort(\"%1\") failed — %2")
-                                  .arg(ports[i])
-                                  .arg(QString::fromStdString(e.getMessage())));
-                return false;
+            // Hold portMutex_ while calling midi_->openPort() so the MTC
+            // thread cannot start sending before portOpen_ is set.
+            QString openedName;
+            {
+                std::lock_guard<std::mutex> lk(portMutex_);
+                try {
+                    midi_->openPort(static_cast<unsigned>(i), "StudioLog MTC Out");
+                } catch (const RtMidiError& e) {
+                    Logger::error(QString("MIDIOutput: openPort(\"%1\") failed — %2")
+                                      .arg(ports[i])
+                                      .arg(QString::fromStdString(e.getMessage())));
+                    return false;
+                }
+                portOpen_        = true;
+                currentPortName_ = ports[i];
+                openedName       = ports[i];
             }
-            portOpen_        = true;
-            currentPortName_ = ports[i];
-            Logger::info("MIDIOutput: opened \"" + currentPortName_ + "\"");
-            emit portOpened(currentPortName_);
+            Logger::info("MIDIOutput: opened \"" + openedName + "\"");
+            emit portOpened(openedName);
             return true;
         }
     }
@@ -105,28 +111,43 @@ bool MIDIOutput::openPort(const QString& portName)
 
 void MIDIOutput::closePort()
 {
-    if (!portOpen_) return;
-
-    if (midi_) {
-        try {
-            midi_->closePort();
-        } catch (const RtMidiError& e) {
-            Logger::warn(QString("MIDIOutput: closePort error — %1")
-                             .arg(QString::fromStdString(e.getMessage())));
+    // Hold portMutex_ while touching midi_ and portOpen_ so that any
+    // in-flight sendRaw() on the MTC thread completes before we tear
+    // down the RtMidi port.  Logger and emit are called outside the
+    // lock to avoid potential deadlock with connected slots.
+    bool wasOpen = false;
+    {
+        std::lock_guard<std::mutex> lk(portMutex_);
+        if (!portOpen_) return;
+        if (midi_) {
+            try {
+                midi_->closePort();
+            } catch (const RtMidiError& e) {
+                Logger::warn(QString("MIDIOutput: closePort error — %1")
+                                 .arg(QString::fromStdString(e.getMessage())));
+            }
         }
+        portOpen_        = false;
+        currentPortName_.clear();
+        wasOpen = true;
     }
-
-    portOpen_        = false;
-    currentPortName_.clear();
-    Logger::info("MIDIOutput: port closed");
-    emit portClosed();
+    if (wasOpen) {
+        Logger::info("MIDIOutput: port closed");
+        emit portClosed();
+    }
 }
 
 // ── Send (hot path — called from MTC output thread) ──────────────────────────
 
 void MIDIOutput::sendRaw(const uint8_t* data, std::size_t len)
 {
+    // Fast pre-check without locking — avoids mutex acquisition when the
+    // port is clearly closed.  portOpen_ may be stale by one instruction,
+    // so we re-check inside the lock before touching midi_.
     if (!portOpen_ || !midi_) return;
+
+    std::lock_guard<std::mutex> lk(portMutex_);
+    if (!portOpen_ || !midi_) return; // re-check under lock
 
     // Use the const-pointer + size overload — no std::vector allocation on the hot path.
     // RtMidiError here means the port disconnected at runtime (e.g. loopMIDI killed).
@@ -136,10 +157,13 @@ void MIDIOutput::sendRaw(const uint8_t* data, std::size_t len)
         Logger::warn(QString("MIDIOutput: sendMessage failed — %1")
                          .arg(QString::fromStdString(e.getMessage())));
 
-        // Mark closed immediately so the MTC thread stops sending.
+        // Mark closed while still holding portMutex_ so the main thread's
+        // openPort/closePort see a consistent state.
         portOpen_ = false;
 
-        // Emit portClosed() on the main thread (we are on the MTC output thread here).
+        // currentPortName_ and portClosed() are touched on the main thread.
+        // All reads/writes of currentPortName_ happen on the main thread, so
+        // no lock is needed inside the queued lambda.
         QMetaObject::invokeMethod(this, [this] {
             currentPortName_.clear();
             emit portClosed();

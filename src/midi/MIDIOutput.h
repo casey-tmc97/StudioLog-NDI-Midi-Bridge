@@ -2,6 +2,7 @@
 #include <QObject>
 #include <QStringList>
 #include <memory>
+#include <mutex>
 #include <cstdint>
 
 // Forward declaration — avoid leaking RtMidi.h into all TUs
@@ -37,8 +38,8 @@ public:
     /// Close the current port without destroying the RtMidi instance.
     void closePort();
 
-    bool isOpen() const { return portOpen_; }
-    QString currentPortName() const { return currentPortName_; }
+    bool isOpen() const { std::lock_guard<std::mutex> lk(portMutex_); return portOpen_; }
+    QString currentPortName() const { std::lock_guard<std::mutex> lk(portMutex_); return currentPortName_; }
 
     /// Send raw bytes.  Must be called from the MTC output thread only.
     void sendRaw(const uint8_t* data, std::size_t len);
@@ -65,6 +66,12 @@ private slots:
     void pollPorts();
 
 private:
+    // Protects portOpen_, currentPortName_, and all midi_->*() calls.
+    // sendRaw() runs on the MTC thread; openPort()/closePort() run on the
+    // main thread — without this mutex, tearing down the port mid-send
+    // corrupts RtMidi's internal WinMM buffers → access violation.
+    mutable std::mutex portMutex_;
+
     std::unique_ptr<RtMidiOut> midi_;
     bool    portOpen_       = false;
     QString currentPortName_;
