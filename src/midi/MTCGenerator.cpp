@@ -4,7 +4,6 @@
 #include "util/Logger.h"
 #include <QMetaObject>
 #include <chrono>
-#include <thread>
 
 #ifdef _WIN32
 #  include <windows.h>
@@ -133,47 +132,63 @@ void MTCGenerator::threadFunc()
         // keeps all 8 nibbles in a cycle consistent and lets the QF stream run
         // uninterrupted.  A Full-Frame resync is sent only on a genuine
         // discontinuity (fps change or jump > 4 frames).
-        {
+        //
+        // IMPORTANT: hold tcMutex_ only for the read + clear — NOT for the
+        // subsequent Logger::info / sendFullFrame.  Those operations can block
+        // (MIDI I/O, Logger callback) and would stall the LTC decode thread
+        // calling setTimecode() via DirectConnection, causing ring-buffer
+        // accumulation and burst delivery that looks like a large TC jump.
+        //
+        // The freewheel timer is refreshed at piece-0 only (every 66.7 ms),
+        // which is well within the 2-second freewheel window.
+        bool doResync = false;
+        bool fpsMismatchOut = false;
+        int64_t frameDiffOut = 0;
+        SMPTETimecode prevTC = currentTC_; // capture before possible snap
+        if (qfPiece_ == 0) {
             std::lock_guard<std::mutex> lk(tcMutex_);
             if (tcUpdated_) {
-                // Always refresh the freewheel timer — LTC is alive.
                 lastLTCUpdateMs = std::chrono::steady_clock::now();
 
-                // Apply the new TC only at the start of a fresh QF cycle so
-                // that mid-cycle nibbles remain consistent.
-                //
-                // Critically: for NORMAL running do NOT override the internal
-                // counter with the incoming LTC value.  The internal counter
-                // advances by exactly 2 frames after every QF cycle (piece 7 →
-                // advanceByTwo()).  Overriding it with each LTC frame — even
-                // when the diff is small — causes the stream to jump backwards
-                // or skip frames (LTC arrives every 1 frame; QF cycles cover 2
-                // frames; so pendingTC_ is always 1 frame behind currentTC_
-                // after advanceByTwo, producing a -1 snap every other cycle).
-                //
-                // Correct policy: let the internal counter free-run; only snap
-                // it back to LTC on a genuine discontinuity (fps change or
-                // jump > 4 frames).
-                if (qfPiece_ == 0) {
-                    const bool fpsMismatch  = (pendingTC_.fps != currentTC_.fps);
-                    const int64_t frameDiff = std::abs(tcToTotalFrames(pendingTC_)
-                                                     - tcToTotalFrames(currentTC_));
-                    const bool discontinuous = fpsMismatch || (frameDiff > 4);
+                fpsMismatchOut = (pendingTC_.fps != currentTC_.fps);
+                frameDiffOut   = std::abs(tcToTotalFrames(pendingTC_)
+                                         - tcToTotalFrames(currentTC_));
+                const bool discontinuous = fpsMismatchOut || (frameDiffOut > 4);
 
-                    tcUpdated_ = false; // always consume the pending update
+                tcUpdated_ = false; // always consume
 
-                    if (discontinuous) {
-                        // Genuine jump or fps change — snap and resync receiver.
-                        currentTC_ = pendingTC_;
-                        Logger::info(QString("MTCGenerator: resync (jump=%1 frames, fpsChange=%2)")
-                                         .arg(frameDiff).arg(fpsMismatch));
-                        sendFullFrame(currentTC_);
-                        lastFullFrameMs = std::chrono::steady_clock::now();
-                        // qfPiece_ is already 0; QF stream continues.
-                    }
-                    // Otherwise: internal counter (advanceByTwo) keeps running.
+                if (discontinuous) {
+                    currentTC_ = pendingTC_; // snap
+                    // Round down to an even frame so advanceByTwo() never skips
+                    // frame 00 at seconds boundaries.  The LTC source delivers
+                    // odd frames (3-frame stride from an odd start) and without
+                    // alignment the QF counter crosses the second on frame :29
+                    // (advancing to :01) rather than :28 (advancing to :00).
+                    currentTC_.frames &= ~static_cast<uint8_t>(1u);
+                    doResync   = true;
                 }
+                // Otherwise: internal counter (advanceByTwo) keeps running.
             }
+        }
+
+        // Perform resync work OUTSIDE tcMutex_ so the LTC decode thread is
+        // never blocked by MIDI I/O or Logger while calling setTimecode().
+        if (doResync) {
+            Logger::info(QString("MTCGenerator: resync "
+                                 "(was %1:%2:%3:%4 → now %5:%6:%7:%8, "
+                                 "jump=%9 frames, fpsChange=%10)")
+                             .arg(prevTC.hours,       2, 10, QChar('0'))
+                             .arg(prevTC.minutes,     2, 10, QChar('0'))
+                             .arg(prevTC.seconds,     2, 10, QChar('0'))
+                             .arg(prevTC.frames,      2, 10, QChar('0'))
+                             .arg(currentTC_.hours,   2, 10, QChar('0'))
+                             .arg(currentTC_.minutes, 2, 10, QChar('0'))
+                             .arg(currentTC_.seconds, 2, 10, QChar('0'))
+                             .arg(currentTC_.frames,  2, 10, QChar('0'))
+                             .arg(frameDiffOut).arg(fpsMismatchOut));
+            sendFullFrame(currentTC_);
+            lastFullFrameMs = std::chrono::steady_clock::now();
+            // qfPiece_ is already 0; QF stream continues from snapped TC.
         }
 
         // Periodic Full Frame every 10 s — lets a DAW (e.g. Livetrax/Ardour)
@@ -232,9 +247,7 @@ void MTCGenerator::busyWaitUntil(int64_t targetNs)
 
     int64_t now = HighResTimer::nowNs();
     if (now < sleepUntil) {
-        // TODO: use std::this_thread::sleep_until with a high-res clock
-        int64_t sleepNs = sleepUntil - now;
-        std::this_thread::sleep_for(std::chrono::nanoseconds(sleepNs));
+        HighResTimer::sleepUntilNs(sleepUntil);
     }
 
     // Busy-wait

@@ -23,20 +23,52 @@ int64_t HighResTimer::nowNs() noexcept
 {
     LARGE_INTEGER count;
     QueryPerformanceCounter(&count);
-    // Convert ticks → nanoseconds without overflow for typical frequencies
-    return (count.QuadPart * 1'000'000'000LL) / g_qpcFreq.QuadPart;
+    // Safe conversion: split to avoid int64 overflow when count is large.
+    // Direct (count * 1e9 / freq) overflows once the system has been running
+    // ~15 minutes at 10 MHz QPC, producing wrong absolute timestamps.
+    const int64_t freq = g_qpcFreq.QuadPart;
+    return (count.QuadPart / freq) * 1'000'000'000LL
+         + (count.QuadPart % freq) * 1'000'000'000LL / freq;
+}
+
+// Thread-local high-resolution waitable timer (CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+// requires Windows 10 version 1803 / build 17134).  Falls back to sleep_for on
+// older systems.  Timer handle is created once per thread and never closed (the
+// process outlives the thread; the OS cleans up on process exit).
+static HANDLE getHighResWaitableTimer() noexcept
+{
+    static thread_local HANDLE s_timer = []() -> HANDLE {
+        HANDLE h = CreateWaitableTimerExW(nullptr, nullptr,
+            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+        if (!h) {
+            // Older Windows: fall back to low-resolution timer
+            h = CreateWaitableTimerW(nullptr, /*bManualReset=*/TRUE, nullptr);
+        }
+        return h;
+    }();
+    return s_timer;
 }
 
 void HighResTimer::sleepUntilNs(int64_t targetNs) noexcept
 {
-    // TODO: implement precise timed sleep using a waitable timer
-    //   HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr,
-    //       CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
-    //   LARGE_INTEGER dueTime = { .QuadPart = -(targetNs - nowNs()) / 100 };
-    //   SetWaitableTimerEx(timer, &dueTime, 0, nullptr, nullptr, nullptr, 0);
-    //   WaitForSingleObject(timer, INFINITE);
-    //   CloseHandle(timer);
-    (void)targetNs;
+    const int64_t remainingNs = targetNs - nowNs();
+    if (remainingNs <= 0) return;
+
+    HANDLE timer = getHighResWaitableTimer();
+    if (!timer) {
+        // Extreme fallback: busy-spin (should never reach this)
+        while (nowNs() < targetNs) {}
+        return;
+    }
+
+    // Negative LARGE_INTEGER = relative time in 100-ns units
+    LARGE_INTEGER dueTime;
+    dueTime.QuadPart = -(remainingNs / 100LL);
+    if (dueTime.QuadPart == 0) dueTime.QuadPart = -1; // at least 100 ns
+
+    if (SetWaitableTimer(timer, &dueTime, 0, nullptr, nullptr, FALSE)) {
+        WaitForSingleObject(timer, INFINITE);
+    }
 }
 
 #elif defined(__APPLE__)
