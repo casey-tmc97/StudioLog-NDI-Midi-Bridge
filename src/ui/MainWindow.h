@@ -3,6 +3,7 @@
 #include "midi/MTCTypes.h"
 #include <QMainWindow>
 #include <QStringList>
+#include <QString>
 
 namespace Ui { class MainWindow; }
 
@@ -32,12 +33,14 @@ public:
 
     void setSettings(Settings* settings);
 
+    /// Set the log file path shown by Help > Show Log File.
+    void setLogPath(const QString& path);
+
 public slots:
     void onStateChanged(StudioLog::State newState, StudioLog::State oldState);
     void onTimecodeUpdated(StudioLog::SMPTETimecode tc);
     void onNDISourcesChanged(const QStringList& sources);
     void onMIDIPortsChanged(const QStringList& ports);
-    void onStatusMessage(const QString& msg);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -58,6 +61,7 @@ private:
 
     Ui::MainWindow* ui_ = nullptr;
     Settings*       settings_ = nullptr;
+    QString         logPath_;
 };
 
 } // namespace StudioLog

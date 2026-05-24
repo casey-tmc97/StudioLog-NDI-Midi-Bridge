@@ -12,6 +12,8 @@
 #include "util/Logger.h"
 #include <QMetaObject>
 #include <QMetaType>
+#include <QDir>
+#include <QStandardPaths>
 
 namespace StudioLog {
 
@@ -53,7 +55,6 @@ Application::~Application()
     // before NDIReceiver; NDIDiscovery is independent but uses the same NDI
     // library, so it stops last.
     Logger::info("Application: shutting down");
-    Logger::setCallback({}); // prevent dangling pointer after mainWindow_ destructs
 
     if (mtcGenerator_) mtcGenerator_->stop();
     if (ltcDecoder_)   ltcDecoder_->stop();
@@ -185,20 +186,17 @@ void Application::start()
 {
     Logger::info("Application::start — bringing up subsystems");
 
-    // Route log messages to the UI log view (Info and above only).
-    // The callback fires on whatever thread called Logger::log(); we marshal
-    // to the main thread via QueuedConnection so the UI is never touched from
-    // a background thread.
-    Logger::setCallback([this](Logger::Level level, const QString& line) {
-        if (level >= Logger::Level::Info) {
-            QMetaObject::invokeMethod(mainWindow_.get(),
-                [mw = mainWindow_.get(), line]{ mw->onStatusMessage(line); },
-                Qt::QueuedConnection);
-        }
-    });
+    // Initialise file logging: AppLocalData/logs/studiolog.log (append across sessions).
+    const QString logDir = QStandardPaths::writableLocation(
+                               QStandardPaths::AppLocalDataLocation) + "/logs";
+    QDir().mkpath(logDir);
+    const QString logPath = logDir + "/studiolog.log";
+    Logger::init(logPath);
+    Logger::info(QString("Application: log file → %1").arg(logPath));
 
-    // Give the main window access to Settings so it can pre-populate UI fields
+    // Give the main window access to Settings and the log file path.
     mainWindow_->setSettings(settings_.get());
+    mainWindow_->setLogPath(logPath);
 
     // Wire the MTC generator to the MIDI output before either is started
     mtcGenerator_->setMIDIOutput(midiOutput_.get());

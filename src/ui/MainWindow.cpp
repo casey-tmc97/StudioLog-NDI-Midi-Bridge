@@ -2,9 +2,11 @@
 #include "ui_MainWindow.h"
 #include "app/Settings.h"
 #include <QCloseEvent>
+#include <QDesktopServices>
 #include <QMessageBox>
 #include <QApplication>
 #include <QSystemTrayIcon>
+#include <QUrl>
 
 namespace StudioLog {
 
@@ -35,6 +37,14 @@ MainWindow::MainWindow(QWidget* parent)
 
     // ── Menu actions ──────────────────────────────────────────────────────────
     connect(ui_->actionQuit, &QAction::triggered, qApp, &QApplication::quit);
+
+    connect(ui_->actionShowLog, &QAction::triggered, this, [this] {
+        if (logPath_.isEmpty()) {
+            QMessageBox::information(this, "Log File", "No log file has been configured.");
+            return;
+        }
+        QDesktopServices::openUrl(QUrl::fromLocalFile(logPath_));
+    });
 
     connect(ui_->actionAbout, &QAction::triggered, this, [this] {
         QMessageBox::about(this,
@@ -118,13 +128,9 @@ void MainWindow::onMIDIPortsChanged(const QStringList& ports)
         ui_->midiCombo->setCurrentIndex(idx);
 }
 
-void MainWindow::onStatusMessage(const QString& msg)
+void MainWindow::setLogPath(const QString& path)
 {
-    ui_->logView->appendPlainText(msg);
-    // Auto-scroll to the latest entry
-    QTextCursor c = ui_->logView->textCursor();
-    c.movePosition(QTextCursor::End);
-    ui_->logView->setTextCursor(c);
+    logPath_ = path;
 }
 
 // ── Close / minimize to tray ──────────────────────────────────────────────────

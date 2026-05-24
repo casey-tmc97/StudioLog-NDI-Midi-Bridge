@@ -7,14 +7,14 @@
     <x>0</x>
     <y>0</y>
     <width>520</width>
-    <height>380</height>
+    <height>210</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>StudioLog NDI MIDI Bridge</string>
   </property>
   <widget class="QWidget" name="centralWidget">
-   <layout class="QVBoxLayout" name="verticalLayout" stretch="0,0,1,0">
+   <layout class="QVBoxLayout" name="verticalLayout">
     <property name="margin">
      <number>12</number>
     </property>
@@ -104,31 +104,13 @@
      </widget>
     </item>
 
-    <!-- ── Status log ──────────────────────────────────────────────────── -->
-    <item>
-     <widget class="QPlainTextEdit" name="logView">
-      <property name="readOnly">
-       <bool>true</bool>
-      </property>
-      <property name="maximumBlockCount">
-       <number>200</number>
-      </property>
-      <property name="font">
-       <font>
-        <family>Consolas</family>
-        <pointsize>9</pointsize>
-       </font>
-      </property>
-     </widget>
-    </item>
-
    </layout>
   </widget>
 
   <!-- ── Menu bar ─────────────────────────────────────────────────────────── -->
   <widget class="QMenuBar" name="menuBar">
    <property name="geometry">
-    <rect><x>0</x><y>0</y><width>520</width><height>22</height></rect>
+    <rect><x>0</x><y>0</y><width>520</width><height>24</height></rect>
    </property>
    <widget class="QMenu" name="menuFile">
     <property name="title"><string>File</string></property>
@@ -136,6 +118,8 @@
    </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title"><string>Help</string></property>
+    <addaction name="actionShowLog"/>
+    <addaction name="separator"/>
     <addaction name="actionAbout"/>
    </widget>
    <addaction name="menuFile"/>
@@ -149,6 +133,9 @@
   <action name="actionQuit">
    <property name="text"><string>Quit</string></property>
    <property name="shortcut"><string>Ctrl+Q</string></property>
+  </action>
+  <action name="actionShowLog">
+   <property name="text"><string>Show Log File…</string></property>
   </action>
   <action name="actionAbout">
    <property name="text"><string>About…</string></property>
