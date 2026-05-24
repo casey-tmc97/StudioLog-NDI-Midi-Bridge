@@ -112,7 +112,6 @@ void MTCGenerator::threadFunc()
     qfPiece_ = 0;
 
     auto lastLTCUpdateMs = std::chrono::steady_clock::now();
-    auto lastFullFrameMs = lastLTCUpdateMs; // tracks periodic Full Frame sends
 
     // Absolute-target QF scheduler.  nextTargetNs is advanced by exactly
     // one QF interval each iteration so per-iteration overhead (mutex lock,
@@ -191,24 +190,10 @@ void MTCGenerator::threadFunc()
                              .arg(currentTC_.frames,  2, 10, QChar('0'))
                              .arg(frameDiffOut).arg(fpsMismatchOut));
             sendFullFrame(currentTC_);
-            lastFullFrameMs = std::chrono::steady_clock::now();
             // Reset the scheduler anchor so we don't burst through
             // back-to-back QF sends catching up to a now-stale target.
             nextTargetNs = HighResTimer::nowNs() + intervalNs;
             // qfPiece_ is already 0; QF stream continues from snapped TC.
-        }
-
-        // Periodic Full Frame every 10 s — lets a DAW (e.g. Livetrax/Ardour)
-        // that connects mid-stream quickly locate the timecode position and lock
-        // without waiting for the next discontinuity resync.
-        // Only send at piece 0 so it doesn't interrupt a QF cycle.
-        if (qfPiece_ == 0) {
-            auto msSinceFF = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - lastFullFrameMs).count();
-            if (msSinceFF >= 10'000) {
-                sendFullFrame(currentTC_);
-                lastFullFrameMs = std::chrono::steady_clock::now();
-            }
         }
 
         // Freewheel check
