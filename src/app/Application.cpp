@@ -13,6 +13,7 @@
 #include <QMetaObject>
 #include <QMetaType>
 #include <QDir>
+#include <QIcon>
 #include <QStandardPaths>
 
 namespace StudioLog {
@@ -26,6 +27,7 @@ Application::Application(int& argc, char** argv)
     setOrganizationName("Texas Music Cafe");
     setOrganizationDomain("texasmusiccafe.org");
     setApplicationVersion("0.1.0");
+    setWindowIcon(QIcon(":/NDI_BRIDGE.ico"));
 
     // Required for Qt::QueuedConnection to serialise SMPTETimecode across the
     // event loop (frameDecoded → setTimecode, timecodeUpdated → UI update).

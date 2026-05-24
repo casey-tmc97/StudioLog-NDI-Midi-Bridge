@@ -64,6 +64,11 @@ set(APP_SOURCES
 
 set(APP_RESOURCES resources/studiolog-ndi-midi-bridge.qrc)
 
+# Windows: embed the ICO into the EXE so Explorer / taskbar show it
+if(WIN32)
+    list(APPEND APP_RESOURCES resources/app.rc)
+endif()
+
 add_executable(StudioLogNDIMIDIBridge WIN32 MACOSX_BUNDLE
     ${APP_SOURCES}
     ${APP_RESOURCES}
