@@ -128,23 +128,87 @@ Filename: "{app}\{#AppExeName}"; \
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
 
-; ── loopMIDI detection + silent download/install ─────────────────────────────
+; ── Prerequisite detection + silent download/install ─────────────────────────
 ;
-; loopMIDI (Tobias Erichsen) is required so the app has a virtual MIDI port to
-; send MTC to.  After our files are copied, the installer checks whether loopMIDI
-; is already present; if not, it offers to download and silently install it.
+; Two prerequisites are checked after files are copied (ssPostInstall):
 ;
-; Download URL: update this constant together with LoopMIDIExe if a new version
-; is ever released at https://www.tobias-erichsen.de/software/loopmidi.html
+;   1. Visual C++ Redistributable 2015–2022 x64  (MSVCP140 / VCRUNTIME140)
+;      Built with MSVC 14.50 (VS 18); uses the VS 18 permalink (~18 MB).
+;      Update VCRedistURL if a newer VS ships a new permalink.
+;
+;   2. loopMIDI (Tobias Erichsen) — virtual MIDI port driver (~7.5 MB zip)
+;      Update LoopMIDIZipURL + LoopMIDIExe when a new version is released at
+;      https://www.tobias-erichsen.de/software/loopmidi.html
 
 [Code]
 
 const
+  VCRedistURL    = 'https://aka.ms/vs/18/release/vc_redist.x64.exe';
   LoopMIDIZipURL = 'https://www.tobias-erichsen.de/wp-content/uploads/2020/01/loopMIDISetup_1_0_16_27.zip';
   LoopMIDIExe    = 'loopMIDISetup_1_0_16_27.exe';
 
 var
   DownloadPage: TDownloadWizardPage;
+
+{ ── VC++ Redistributable detection ─────────────────────────────────────────── }
+
+function IsVCRedistInstalled: Boolean;
+var
+  Installed: Cardinal;
+begin
+  { Registry key written by the VC++ 2015-2022 x64 redistributable installer }
+  Result :=
+    RegQueryDWordValue(HKLM,
+      'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64',
+      'Installed', Installed) and (Installed = 1);
+  if Result then Exit;
+
+  { Fallback: check System32 directly }
+  Result :=
+    FileExists(ExpandConstant('{sys}\MSVCP140.dll')) and
+    FileExists(ExpandConstant('{sys}\VCRUNTIME140_1.dll'));
+end;
+
+{ ── VC++ Redistributable download + silent install ───────────────────────────── }
+
+procedure TryInstallVCRedist;
+var
+  ResultCode: Integer;
+begin
+  DownloadPage.Clear;
+  DownloadPage.Add(VCRedistURL, 'vc_redist.x64.exe', '');
+  DownloadPage.Show;
+  try
+    try
+      DownloadPage.Download;
+    except
+      if DownloadPage.AbortedByUser then
+        Log('VC++ Redist download cancelled by user')
+      else
+        SuppressibleMsgBox(
+          'Could not download the Visual C++ Redistributable.' + #13#10 +
+          'Install it manually from:' + #13#10 +
+          'https://aka.ms/vs/18/release/vc_redist.x64.exe',
+          mbError, MB_OK, IDOK);
+      Exit;
+    end;
+  finally
+    DownloadPage.Hide;
+  end;
+
+  if not Exec(ExpandConstant('{tmp}\vc_redist.x64.exe'),
+              '/install /quiet /norestart', '',
+              SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    SuppressibleMsgBox(
+      'Visual C++ Redistributable installation failed. Install it manually.',
+      mbError, MB_OK, IDOK)
+  else if (ResultCode <> 0) and (ResultCode <> 3010) then
+    { 3010 = success but reboot required — acceptable }
+    SuppressibleMsgBox(
+      'VC++ Redistributable installer returned exit code ' + IntToStr(ResultCode) + '.' + #13#10 +
+      'You may need to install it manually.',
+      mbInformation, MB_OK, IDOK);
+end;
 
 { ── loopMIDI detection ──────────────────────────────────────────────────────── }
 
@@ -189,8 +253,8 @@ end;
 procedure InitializeWizard;
 begin
   DownloadPage := CreateDownloadPage(
-    'Downloading loopMIDI',
-    'Downloading loopMIDI virtual MIDI driver from tobias-erichsen.de…',
+    'Downloading prerequisite',
+    'Please wait while a required component is downloaded…',
     @OnDownloadProgress);
 end;
 
@@ -261,18 +325,29 @@ begin
       mbInformation, MB_OK, IDOK);
 end;
 
-{ ── Post-install hook: offer loopMIDI if missing ────────────────────────────── }
+{ ── Post-install hook: install prereqs if missing ───────────────────────────── }
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurStep = ssPostInstall then begin
-    if not IsLoopMIDIInstalled then begin
-      if SuppressibleMsgBox(
-          'StudioLog NDI MIDI Bridge sends MIDI Timecode to a virtual MIDI port.' + #13#10 +
-          'loopMIDI (by Tobias Erichsen) was not found on this system.' + #13#10 + #13#10 +
-          'Download and install loopMIDI now? (~7.5 MB)',
-          mbConfirmation, MB_YESNO, IDNO) = IDYES then
-        TryInstallLoopMIDI;
-    end;
+  if CurStep <> ssPostInstall then Exit;
+
+  { 1. Visual C++ Redistributable (must come before the app can run) }
+  if not IsVCRedistInstalled then begin
+    if SuppressibleMsgBox(
+        'The Visual C++ 2015-2022 Redistributable (x64) is not installed.' + #13#10 +
+        'This runtime is required by StudioLog NDI MIDI Bridge.' + #13#10 + #13#10 +
+        'Download and install it now? (~18 MB)',
+        mbConfirmation, MB_YESNO, IDYES) = IDYES then
+      TryInstallVCRedist;
+  end;
+
+  { 2. loopMIDI virtual MIDI driver }
+  if not IsLoopMIDIInstalled then begin
+    if SuppressibleMsgBox(
+        'StudioLog NDI MIDI Bridge sends MIDI Timecode to a virtual MIDI port.' + #13#10 +
+        'loopMIDI (by Tobias Erichsen) was not found on this system.' + #13#10 + #13#10 +
+        'Download and install loopMIDI now? (~7.5 MB)',
+        mbConfirmation, MB_YESNO, IDNO) = IDYES then
+      TryInstallLoopMIDI;
   end;
 end;
