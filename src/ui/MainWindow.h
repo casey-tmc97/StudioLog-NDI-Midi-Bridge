@@ -43,6 +43,7 @@ public slots:
     void onMIDIPortsChanged(const QStringList& ports);
 
 protected:
+    void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
 
 private slots:
@@ -59,9 +60,10 @@ private:
     void updateStateDisplay(StudioLog::State state);
     void updateTimecodeDisplay(const StudioLog::SMPTETimecode& tc);
 
-    Ui::MainWindow* ui_ = nullptr;
-    Settings*       settings_ = nullptr;
+    Ui::MainWindow* ui_           = nullptr;
+    Settings*       settings_     = nullptr;
     QString         logPath_;
+    bool            m_sizeLocked  = false;
 };
 
 } // namespace StudioLog

@@ -2,6 +2,7 @@
 #include "ui_MainWindow.h"
 #include "app/Settings.h"
 #include <QCloseEvent>
+#include <QShowEvent>
 #include <QDesktopServices>
 #include <QMessageBox>
 #include <QApplication>
@@ -19,12 +20,6 @@ MainWindow::MainWindow(QWidget* parent)
     ui_->setupUi(this);
     setWindowTitle("StudioLog NDI MIDI Bridge");
 
-    // Shrink the window to exactly fit its content and lock it there.
-    // SetFixedSize makes the layout resize the central widget to its minimum
-    // size hint; adjustSize() then immediately syncs the outer QMainWindow
-    // to match before the window is first shown.
-    centralWidget()->layout()->setSizeConstraint(QLayout::SetFixedSize);
-    adjustSize();
 
     // ── Internal combo-box → private slot wiring ──────────────────────────────
     // Use activated() not currentIndexChanged() so programmatic updates
@@ -140,7 +135,20 @@ void MainWindow::setLogPath(const QString& path)
     logPath_ = path;
 }
 
-// ── Close / minimize to tray ──────────────────────────────────────────────────
+// ── Show / close ──────────────────────────────────────────────────────────────
+
+void MainWindow::showEvent(QShowEvent* event)
+{
+    QMainWindow::showEvent(event);
+    // Lock window size to its content on first show.  adjustSize() is called
+    // here (not in the constructor) because the layout's sizeHint() is only
+    // fully computed after the first layout pass, which happens at show time.
+    if (!m_sizeLocked) {
+        m_sizeLocked = true;
+        adjustSize();
+        setFixedSize(size());
+    }
+}
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
