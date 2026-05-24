@@ -127,3 +127,152 @@ Filename: "{app}\{#AppExeName}"; \
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
+
+; ── loopMIDI detection + silent download/install ─────────────────────────────
+;
+; loopMIDI (Tobias Erichsen) is required so the app has a virtual MIDI port to
+; send MTC to.  After our files are copied, the installer checks whether loopMIDI
+; is already present; if not, it offers to download and silently install it.
+;
+; Download URL: update this constant together with LoopMIDIExe if a new version
+; is ever released at https://www.tobias-erichsen.de/software/loopmidi.html
+
+[Code]
+
+const
+  LoopMIDIZipURL = 'https://www.tobias-erichsen.de/wp-content/uploads/2020/01/loopMIDISetup_1_0_16_27.zip';
+  LoopMIDIExe    = 'loopMIDISetup_1_0_16_27.exe';
+
+var
+  DownloadPage: TDownloadWizardPage;
+
+{ ── loopMIDI detection ──────────────────────────────────────────────────────── }
+
+function IsLoopMIDIInstalled: Boolean;
+var
+  SubKeys:     TArrayOfString;
+  DisplayName: String;
+  i:           Integer;
+begin
+  { Fast path: check the known filesystem location (loopMIDI is an x86 app) }
+  Result :=
+    FileExists(ExpandConstant('{pf32}\Tobias Erichsen\loopMIDI\loopMIDI.exe')) or
+    FileExists(ExpandConstant('{pf}\Tobias Erichsen\loopMIDI\loopMIDI.exe'));
+  if Result then Exit;
+
+  { Fallback: scan WOW6432Node uninstall keys for DisplayName = "loopMIDI" }
+  if RegGetSubkeyNames(HKLM,
+       'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+       SubKeys) then
+    for i := 0 to GetArrayLength(SubKeys) - 1 do
+      if RegQueryStringValue(HKLM,
+           'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\' + SubKeys[i],
+           'DisplayName', DisplayName) and
+         (CompareText(DisplayName, 'loopMIDI') = 0) then begin
+        Result := True;
+        Exit;
+      end;
+end;
+
+{ ── Download progress callback ───────────────────────────────────────────────── }
+
+function OnDownloadProgress(const Url, Filename: String;
+                             const Progress, ProgressMax: Int64): Boolean;
+begin
+  if ProgressMax <> 0 then
+    DownloadPage.SetProgress(Progress, ProgressMax);
+  Result := True;
+end;
+
+{ ── Wizard init ──────────────────────────────────────────────────────────────── }
+
+procedure InitializeWizard;
+begin
+  DownloadPage := CreateDownloadPage(
+    'Downloading loopMIDI',
+    'Downloading loopMIDI virtual MIDI driver from tobias-erichsen.de…',
+    @OnDownloadProgress);
+end;
+
+{ ── Download + silent install loopMIDI ──────────────────────────────────────── }
+
+procedure TryInstallLoopMIDI;
+var
+  ZipPath, ExtractDir, SetupExe, PSArgs: String;
+  ResultCode: Integer;
+begin
+  { ── Download ── }
+  DownloadPage.Clear;
+  DownloadPage.Add(LoopMIDIZipURL, 'loopMIDISetup.zip', '');
+  DownloadPage.Show;
+  try
+    try
+      DownloadPage.Download;
+    except
+      if DownloadPage.AbortedByUser then
+        Log('loopMIDI download cancelled by user')
+      else
+        SuppressibleMsgBox(
+          'Could not download loopMIDI.' + #13#10 +
+          'Install it manually from:' + #13#10 +
+          'https://www.tobias-erichsen.de/software/loopmidi.html',
+          mbError, MB_OK, IDOK);
+      Exit;
+    end;
+  finally
+    DownloadPage.Hide;
+  end;
+
+  { ── Extract ZIP via PowerShell Expand-Archive ── }
+  ZipPath    := ExpandConstant('{tmp}\loopMIDISetup.zip');
+  ExtractDir := ExpandConstant('{tmp}\loopMIDI');
+
+  { Wrap paths in single-quotes so spaces in temp dir are handled by PowerShell }
+  PSArgs := '-NonInteractive -Command "Expand-Archive -LiteralPath ' +
+            '''' + ZipPath + '''' + ' -DestinationPath ' +
+            '''' + ExtractDir + '''' + ' -Force"';
+
+  if not Exec('powershell.exe', PSArgs, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+     or (ResultCode <> 0) then begin
+    SuppressibleMsgBox(
+      'Could not extract loopMIDI archive. Install it manually.',
+      mbError, MB_OK, IDOK);
+    Exit;
+  end;
+
+  { ── Run the loopMIDI installer silently ── }
+  SetupExe := ExtractDir + '\' + LoopMIDIExe;
+  if not FileExists(SetupExe) then begin
+    SuppressibleMsgBox(
+      'loopMIDI installer not found in archive (' + LoopMIDIExe + ').' + #13#10 +
+      'Install it manually from tobias-erichsen.de/software/loopmidi.html',
+      mbError, MB_OK, IDOK);
+    Exit;
+  end;
+
+  Log('Running loopMIDI installer: ' + SetupExe);
+  if not Exec(SetupExe, '/VERYSILENT /NORESTART', '', SW_SHOW,
+              ewWaitUntilTerminated, ResultCode) then
+    SuppressibleMsgBox('loopMIDI installation failed. Install it manually.', mbError, MB_OK, IDOK)
+  else if ResultCode <> 0 then
+    SuppressibleMsgBox(
+      'loopMIDI installer returned exit code ' + IntToStr(ResultCode) + '.' + #13#10 +
+      'You may need to install it manually.',
+      mbInformation, MB_OK, IDOK);
+end;
+
+{ ── Post-install hook: offer loopMIDI if missing ────────────────────────────── }
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then begin
+    if not IsLoopMIDIInstalled then begin
+      if SuppressibleMsgBox(
+          'StudioLog NDI MIDI Bridge sends MIDI Timecode to a virtual MIDI port.' + #13#10 +
+          'loopMIDI (by Tobias Erichsen) was not found on this system.' + #13#10 + #13#10 +
+          'Download and install loopMIDI now? (~7.5 MB)',
+          mbConfirmation, MB_YESNO, IDNO) = IDYES then
+        TryInstallLoopMIDI;
+    end;
+  end;
+end;
