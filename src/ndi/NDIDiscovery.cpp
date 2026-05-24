@@ -89,6 +89,13 @@ void NDIDiscovery::shutdownNDI()
     findInstance_   = nullptr;
     ndiInitialized_ = false;
     Logger::info("NDIDiscovery: finder destroyed");
+
+    // Match the NDIlib_initialize() called in ensureNDIInit().  This shuts down
+    // NDI's internal threads cleanly so the process can exit without hanging.
+    // Called here because shutdownNDI() is always the last NDI teardown step —
+    // NDIReceiver::disconnect() (recv instance) runs before NDIDiscovery::stop().
+    NDIlib_destroy();
+    Logger::info("NDIDiscovery: NDI library released");
 }
 
 void NDIDiscovery::poll()
