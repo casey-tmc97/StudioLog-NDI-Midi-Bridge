@@ -19,6 +19,8 @@ public:
 
 public slots:
     void onStateChanged(StudioLog::State newState, StudioLog::State oldState);
+    /// Shows a one-time balloon telling the user how to fully quit.
+    void showMinimizeHint();
 
 private slots:
     void onActivated(QSystemTrayIcon::ActivationReason reason);

@@ -55,15 +55,18 @@ signals:
     void ndiSourceSelected(const QString& source);
     void midiPortSelected(const QString& port);
     void ltcChannelChanged(int channel);
+    /// Emitted the first time the user closes the window to the tray.
+    void minimizedToTray();
 
 private:
     void updateStateDisplay(StudioLog::State state);
     void updateTimecodeDisplay(const StudioLog::SMPTETimecode& tc);
 
-    Ui::MainWindow* ui_           = nullptr;
-    Settings*       settings_     = nullptr;
+    Ui::MainWindow* ui_              = nullptr;
+    Settings*       settings_        = nullptr;
     QString         logPath_;
-    bool            m_sizeLocked  = false;
+    bool            m_sizeLocked     = false;
+    bool            m_trayHintSent   = false;
 };
 
 } // namespace StudioLog

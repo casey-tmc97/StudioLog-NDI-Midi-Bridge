@@ -152,12 +152,16 @@ void MainWindow::showEvent(QShowEvent* event)
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    if (settings_ && settings_->minimizeToTray() &&
-        QSystemTrayIcon::isSystemTrayAvailable())
-    {
+    if (QSystemTrayIcon::isSystemTrayAvailable()) {
+        // Always minimize to tray — File > Quit is the only way to exit.
         hide();
-        event->ignore(); // keep the process running
+        event->ignore();
+        if (!m_trayHintSent) {
+            m_trayHintSent = true;
+            emit minimizedToTray();
+        }
     } else {
+        // No system tray: fall back to a real quit.
         event->accept();
         QApplication::quit();
     }

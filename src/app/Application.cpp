@@ -168,6 +168,11 @@ void Application::connectSignals()
                 midiOutput_->openPort(port);
             });
 
+    // First-time minimize-to-tray balloon hint
+    connect(mainWindow_.get(), &MainWindow::minimizedToTray,
+            trayIcon_.get(), &TrayIcon::showMinimizeHint,
+            Qt::QueuedConnection);
+
     // LTC channel changed (Left / Right / Auto)
     connect(mainWindow_.get(), &MainWindow::ltcChannelChanged,
             this, [this](int ch) {

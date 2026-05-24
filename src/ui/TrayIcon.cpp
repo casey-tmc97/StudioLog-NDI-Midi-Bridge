@@ -8,7 +8,7 @@ TrayIcon::TrayIcon(QWidget* mainWindow, QObject* parent)
     : QSystemTrayIcon(parent)
     , mainWindow_(mainWindow)
 {
-    // TODO: setIcon(QIcon(":/icons/tray_idle.png"));
+    setIcon(QIcon(":/NDI_BRIDGE.ico"));
     setToolTip("StudioLog NDI MIDI Bridge");
     buildContextMenu();
     connect(this, &QSystemTrayIcon::activated, this, &TrayIcon::onActivated);
@@ -31,6 +31,16 @@ void TrayIcon::buildContextMenu()
 void TrayIcon::onStateChanged(State newState, State /*oldState*/)
 {
     updateIcon(newState);
+}
+
+void TrayIcon::showMinimizeHint()
+{
+    showMessage(
+        "StudioLog NDI MIDI Bridge",
+        "Still running in the system tray.\n"
+        "Use File → Quit to exit.",
+        QSystemTrayIcon::Information,
+        4000);
 }
 
 void TrayIcon::onActivated(QSystemTrayIcon::ActivationReason reason)
