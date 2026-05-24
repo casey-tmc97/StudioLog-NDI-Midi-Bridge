@@ -37,6 +37,8 @@ WizardStyle=modern
 ; Compression
 Compression=lzma2/ultra64
 SolidCompression=yes
+; Close the app if it is running before copying files (prevents locked-exe errors on upgrade)
+CloseApplications=yes
 ; Privileges — installs to Program Files; writes no per-user state during setup
 PrivilegesRequired=admin
 ; Windows 10 or later (build 10240)
