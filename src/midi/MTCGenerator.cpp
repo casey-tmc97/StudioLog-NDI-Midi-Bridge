@@ -114,11 +114,15 @@ void MTCGenerator::threadFunc()
     auto lastLTCUpdateMs = std::chrono::steady_clock::now();
     auto lastFullFrameMs = lastLTCUpdateMs; // tracks periodic Full Frame sends
 
+    // Absolute-target QF scheduler.  nextTargetNs is advanced by exactly
+    // one QF interval each iteration so per-iteration overhead (mutex lock,
+    // Logger, MIDI I/O) never accumulates into positional drift.  Without
+    // this, ~3–4 µs of overhead per QF compounds to ~5 frames of drift per
+    // 20 s, triggering a resync on every LTC update.
+    int64_t nextTargetNs = HighResTimer::nowNs() + qfIntervalNs(currentTC_.fps);
+
     while (!stopRequested_.load(std::memory_order_relaxed)) {
         int64_t intervalNs = qfIntervalNs(currentTC_.fps);
-
-        int64_t nowNs   = HighResTimer::nowNs();
-        int64_t targetNs = nowNs + intervalNs;
 
         // Consume pending timecode update (from LTC thread).
         //
@@ -188,6 +192,9 @@ void MTCGenerator::threadFunc()
                              .arg(frameDiffOut).arg(fpsMismatchOut));
             sendFullFrame(currentTC_);
             lastFullFrameMs = std::chrono::steady_clock::now();
+            // Reset the scheduler anchor so we don't burst through
+            // back-to-back QF sends catching up to a now-stale target.
+            nextTargetNs = HighResTimer::nowNs() + intervalNs;
             // qfPiece_ is already 0; QF stream continues from snapped TC.
         }
 
@@ -226,8 +233,12 @@ void MTCGenerator::threadFunc()
         }
         qfPiece_ = (qfPiece_ + 1) & 0x07u;
 
-        // Sleep-to-target with busy-wait tail
-        busyWaitUntil(targetNs);
+        // Sleep to the absolute target, then step it forward by exactly one
+        // QF interval.  If a loop body ran long (resync, Logger, MIDI I/O)
+        // and nextTargetNs is already in the past, busyWaitUntil returns
+        // immediately and nextTargetNs self-corrects without extra drift.
+        busyWaitUntil(nextTargetNs);
+        nextTargetNs += intervalNs;
     }
 
     Logger::info("MTCGenerator: thread stopped");
