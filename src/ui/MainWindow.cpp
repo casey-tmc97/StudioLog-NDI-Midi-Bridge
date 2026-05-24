@@ -19,10 +19,12 @@ MainWindow::MainWindow(QWidget* parent)
     ui_->setupUi(this);
     setWindowTitle("StudioLog NDI MIDI Bridge");
 
-    // Lock the window to its content size.  SetFixedSize tells the layout to
-    // keep the central widget at its minimum size hint and propagates that
-    // constraint to the outer QMainWindow, removing all resize handles.
+    // Shrink the window to exactly fit its content and lock it there.
+    // SetFixedSize makes the layout resize the central widget to its minimum
+    // size hint; adjustSize() then immediately syncs the outer QMainWindow
+    // to match before the window is first shown.
     centralWidget()->layout()->setSizeConstraint(QLayout::SetFixedSize);
+    adjustSize();
 
     // ── Internal combo-box → private slot wiring ──────────────────────────────
     // Use activated() not currentIndexChanged() so programmatic updates
