@@ -32,6 +32,7 @@ OutputDir=..\dist
 OutputBaseFilename=StudioLogNDIMIDIBridge-Setup-{#AppVersion}
 ; Appearance
 SetupIconFile={#ResDir}\NDI_BRIDGE.ico
+UninstallDisplayIcon={app}\{#AppExeName}
 WizardStyle=modern
 ; Compression
 Compression=lzma2/ultra64
