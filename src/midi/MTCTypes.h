@@ -17,16 +17,18 @@ enum class FPS : uint8_t {
 };
 
 /// Returns the MTC fps_code nibble embedded in QF piece 7 and Full Frame SysEx.
-/// MIDI spec: 0 = 24, 1 = 25, 2 = 29.97 DF, 3 = 30 (also used for 30 NDF and 23.976)
+/// MIDI spec: 0 = 24, 1 = 25, 2 = 29.97 (DF or NDF — only one 29.97 code exists),
+///            3 = 30 NDF.  Both 29.97DF and 29.97NDF use code 2; the drop-frame
+///            distinction is implicit in whether frames 00/01 are skipped.
 inline uint8_t fpsCode(FPS fps) noexcept {
     switch (fps) {
-        case FPS::FPS_23976:  return 0;
-        case FPS::FPS_24:     return 0;
-        case FPS::FPS_25:     return 1;
-        case FPS::FPS_2997DF: return 2;
-        case FPS::FPS_2997NDF:return 3;
-        case FPS::FPS_30:     return 3;
-        default:              return 0;
+        case FPS::FPS_23976:   return 0;
+        case FPS::FPS_24:      return 0;
+        case FPS::FPS_25:      return 1;
+        case FPS::FPS_2997DF:  return 2;
+        case FPS::FPS_2997NDF: return 2; // 29.97 fps — no separate NDF code in MTC spec
+        case FPS::FPS_30:      return 3;
+        default:               return 0;
     }
 }
 
