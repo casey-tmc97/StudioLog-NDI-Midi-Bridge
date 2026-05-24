@@ -129,7 +129,23 @@ Filename: "{app}\{#AppExeName}"; \
 ; ── Uninstall cleanup ────────────────────────────────────────────────────────
 
 [UninstallDelete]
+; Installed files + any runtime files created inside the app directory
 Type: filesandordirs; Name: "{app}"
+; Log file written to AppLocalData by the app at runtime
+Type: filesandordirs; Name: "{localappdata}\Texas Music Cafe\StudioLog NDI MIDI Bridge"
+; Remove the parent org folder if nothing else is using it
+Type: dirifempty;     Name: "{localappdata}\Texas Music Cafe"
+
+; ── Uninstall registry cleanup ───────────────────────────────────────────────
+; QSettings writes to HKCU\Software\Texas Music Cafe\StudioLog NDI MIDI Bridge
+; at runtime (not during install), so we use dontcreatekey + uninsdeletekey
+; to ensure it is removed on uninstall without being created by the installer.
+
+[Registry]
+Root: HKCU; Subkey: "Software\Texas Music Cafe\StudioLog NDI MIDI Bridge"; \
+  Flags: dontcreatekey uninsdeletekey
+Root: HKCU; Subkey: "Software\Texas Music Cafe"; \
+  Flags: dontcreatekey uninsdeletekeyifempty
 
 ; ── Prerequisite detection + silent download/install ─────────────────────────
 ;
