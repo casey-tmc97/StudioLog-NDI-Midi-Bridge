@@ -169,6 +169,42 @@ const
 var
   DownloadPage: TDownloadWizardPage;
 
+{ ── Previous version silent uninstall ───────────────────────────────────────── }
+{ Called before files are copied.  Locates the existing uninstall entry by      }
+{ AppId, runs the uninstaller silently, and waits for it to finish so the        }
+{ Program Files directory is fully cleared before the new files land.            }
+
+function GetPreviousUninstallString: String;
+var
+  SubKey:    String;
+  UninstStr: String;
+begin
+  SubKey    := 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' +
+               '{#SetupSetting("AppId")}' + '_is1';
+  UninstStr := '';
+  if not RegQueryStringValue(HKLM, SubKey, 'UninstallString', UninstStr) then
+    RegQueryStringValue(HKCU, SubKey, 'UninstallString', UninstStr);
+  Result := UninstStr;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  UninstStr:  String;
+  ResultCode: Integer;
+begin
+  Result    := '';
+  UninstStr := GetPreviousUninstallString;
+  if UninstStr = '' then Exit;
+
+  UninstStr := RemoveQuotes(UninstStr);
+  Log('Removing previous installation: ' + UninstStr);
+  if Exec(UninstStr, '/SILENT /NORESTART', '', SW_HIDE,
+          ewWaitUntilTerminated, ResultCode) then
+    Log('Previous uninstaller finished (exit code ' + IntToStr(ResultCode) + ')')
+  else
+    Log('Previous uninstaller could not be launched — continuing anyway');
+end;
+
 { ── VC++ Redistributable detection ─────────────────────────────────────────── }
 
 function IsVCRedistInstalled: Boolean;
